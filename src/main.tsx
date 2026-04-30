@@ -441,15 +441,15 @@ function HoldingsTable({ holdings }: { holdings: Holding[] }) {
       <tbody>
         {holdings.map((item) => (
           <tr key={item.code}>
-            <td>
+            <td data-label="종목">
               <strong>{item.name}</strong>
               <span>{item.code}</span>
             </td>
-            <td>{num(item.qty)}</td>
-            <td>{num(item.avg_price)}</td>
-            <td>{num(item.cur_price)}</td>
-            <td>{krw(item.eval_amt)}</td>
-            <td className={pnlClass(item.pnl_rate)}>
+            <td data-label="수량">{num(item.qty)}</td>
+            <td data-label="평균단가">{num(item.avg_price)}</td>
+            <td data-label="현재가">{num(item.cur_price)}</td>
+            <td data-label="평가금액">{krw(item.eval_amt)}</td>
+            <td data-label="손익" className={pnlClass(item.pnl_rate)}>
               {Number.parseFloat(item.pnl_rate || "0") >= 0 ? "+" : ""}
               {(Number.parseFloat(item.pnl_rate || "0") || 0).toFixed(2)}%
               <span>{signedKRW(item.pnl_amt)}</span>
@@ -478,15 +478,15 @@ function CryptoTable({ assets }: { assets: CryptoAsset[] }) {
       <tbody>
         {assets.map((item) => (
           <tr key={item.currency}>
-            <td>
+            <td data-label="코인">
               <strong>{item.currency}</strong>
               <span>KRW-{item.currency}</span>
             </td>
-            <td>{item.balance}</td>
-            <td>{num(item.avg_buy_price)}</td>
-            <td>{num(item.cur_price)}</td>
-            <td>{krw(item.eval_amt)}</td>
-            <td className={pnlClass(item.pnl_rate)}>
+            <td data-label="보유수량">{item.balance}</td>
+            <td data-label="평균단가">{num(item.avg_buy_price)}</td>
+            <td data-label="현재가">{num(item.cur_price)}</td>
+            <td data-label="평가금액">{krw(item.eval_amt)}</td>
+            <td data-label="손익" className={pnlClass(item.pnl_rate)}>
               {Number.parseFloat(item.pnl_rate || "0") >= 0 ? "+" : ""}
               {(Number.parseFloat(item.pnl_rate || "0") || 0).toFixed(2)}%
               <span>{signedKRW(item.pnl_amt)}</span>

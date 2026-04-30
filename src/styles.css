@@ -35,7 +35,14 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--bg); color: var(--text); }
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+}
 button, textarea { font: inherit; }
 a { color: inherit; text-decoration: none; }
 
@@ -83,6 +90,7 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
 }
 .primaryButton:disabled, .ghostButton:disabled { opacity: .6; cursor: default; }
+.primaryButton { min-width: 116px; }
 
 .shell { display: flex; min-height: 100vh; }
 .sidebar {
@@ -178,7 +186,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .content { padding: 24px 28px; }
-.workspace { max-width: 1160px; }
+.workspace { max-width: 1160px; margin: 0 auto; }
 .cmdCard, .dataCard, .summaryCard, .healthCard {
   background: var(--card);
   border-radius: 8px;
@@ -331,7 +339,229 @@ a { color: inherit; text-decoration: none; }
 }
 
 @media (max-width: 620px) {
-  .topbar { padding: 0 16px; }
+  .loginWrap {
+    min-height: 100dvh;
+    padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+  }
+  .loginCard {
+    padding: 30px 22px;
+  }
+  .primaryAction {
+    width: 100%;
+  }
+  .shell {
+    display: block;
+    min-height: 100dvh;
+    padding-bottom: calc(74px + env(safe-area-inset-bottom));
+  }
+  .sidebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    width: auto;
+    height: calc(64px + env(safe-area-inset-bottom));
+    min-height: 0;
+    border-top: 1px solid var(--line);
+    border-right: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, .08);
+  }
+  .collapsed .sidebar {
+    width: auto;
+    flex-basis: auto;
+  }
+  .brand,
+  .sideFooter {
+    display: none;
+  }
+  .nav {
+    height: 64px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    padding: 7px 8px;
+  }
+  .navItem,
+  .collapsed .navItem {
+    height: 50px;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    border-radius: 8px;
+    padding: 0;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+  .navItem span,
+  .collapsed .navItem span {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+  }
+  .main {
+    min-height: 100dvh;
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: auto;
+    min-height: 64px;
+    padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+    align-items: flex-start;
+  }
+  .topbar h1 {
+    font-size: 19px;
+  }
+  .topbar p {
+    font-size: 12px;
+  }
   .topActions span { display: none; }
-  .content { padding: 18px 16px; }
+  .logout {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+  .logout svg {
+    flex: 0 0 auto;
+  }
+  .content {
+    padding: 16px 14px 20px;
+  }
+  .cmdCard,
+  .dataCard,
+  .summaryCard,
+  .healthCard,
+  .result {
+    border-radius: 8px;
+  }
+  .cmdCard {
+    padding: 16px;
+  }
+  .cmdCard textarea {
+    min-height: 220px;
+    font-size: 16px;
+  }
+  .actions {
+    justify-content: stretch;
+  }
+  .primaryButton {
+    width: 100%;
+  }
+  .summaryGrid,
+  .healthGrid {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .summaryCard,
+  .healthCard {
+    padding: 16px;
+  }
+  .cardValue {
+    font-size: 20px;
+    line-height: 1.2;
+    word-break: keep-all;
+  }
+  .healthValue {
+    font-size: 38px;
+  }
+  .dataCard {
+    padding: 14px;
+    overflow-x: visible;
+  }
+  .dataHeader {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .dataMeta {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .ghostButton {
+    height: 30px;
+    padding: 0 9px;
+  }
+  .dataTable,
+  .dataTable thead,
+  .dataTable tbody,
+  .dataTable tr,
+  .dataTable td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .dataTable thead {
+    display: none;
+  }
+  .dataTable tr {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: transparent;
+  }
+  .dataTable tr:last-child {
+    margin-bottom: 0;
+  }
+  .dataTable td,
+  .dataTable td:first-child {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 7px 0;
+    border-bottom: 0;
+    text-align: right;
+    font-size: 13px;
+  }
+  .dataTable td:first-child {
+    align-items: flex-start;
+    padding-top: 0;
+    padding-bottom: 9px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .dataTable td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .dataTable td:first-child::before {
+    display: none;
+  }
+  .dataTable td span {
+    margin-top: 1px;
+  }
+  .divider {
+    margin: 18px 0 12px;
+  }
+  .empty {
+    padding: 28px 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .content {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .nav {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .topbar {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
 }
