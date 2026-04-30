@@ -90,7 +90,7 @@ type CommandResult = {
   error?: string;
 };
 
-const apiBase = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
+const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 const tabs: Record<TabID, { title: string; sub: string; icon: React.ComponentType<{ size?: number }> }> = {
   trader: { title: "Trader", sub: "Trader workspace", icon: ChartNoAxesCombined },

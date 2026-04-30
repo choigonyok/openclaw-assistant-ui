@@ -16,10 +16,13 @@ Open:
 http://localhost:5173
 ```
 
-The UI calls the Go API at `VITE_API_BASE_URL`, which defaults to:
+The UI calls the Go API through same-origin proxy routes by default:
 
 ```txt
-http://localhost:8080
+/api
+/login
+/auth
+/logout
 ```
 
 ## Docker
