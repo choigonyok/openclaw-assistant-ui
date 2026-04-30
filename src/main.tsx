@@ -103,6 +103,10 @@ function apiURL(path: string) {
   return `${apiBase}${path}`;
 }
 
+function appURL(path: string) {
+  return path;
+}
+
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiURL(path), {
     ...init,
@@ -220,7 +224,7 @@ function App() {
           </div>
           <div className="topActions">
             <span>{session.user?.nickname || session.user?.name || ""}</span>
-            <a className="logout" href={apiURL(session.logout_url)}>
+            <a className="logout" href={appURL(session.logout_url)}>
               <LogOut size={15} />
               로그아웃
             </a>
@@ -242,7 +246,7 @@ function LoginView({ session, theme, onTheme }: { session: Session; theme: Theme
         <h1>OpenClaw</h1>
         <p>계속하려면 네이버 계정으로 로그인하세요.</p>
         {session.auth_enabled ? (
-          <a className="primaryAction" href={apiURL(session.login_url)}>
+          <a className="primaryAction" href={appURL(session.login_url)}>
             네이버로 로그인
           </a>
         ) : (
