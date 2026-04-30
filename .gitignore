@@ -1,4 +1,7 @@
-.DS_STORE
+.DS_Store
+.env
+.env.*
+!.env.example
 node_modules
 scripts/flow/*/.flowconfig
 .flowconfig
