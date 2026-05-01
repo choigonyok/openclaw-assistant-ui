@@ -366,36 +366,54 @@ type GaRow = {
 };
 type GaStatsMap = Record<string, GaRow>;
 
-async function fetchGaStats(): Promise<GaStatsMap> {
+type GaApiRow = {
+  dimensionValues: { value: string }[];
+  metricValues: { value: string }[];
+};
+
+async function fetchGaRange(startDate: string, endDate: string): Promise<GaApiRow[]> {
   const payload: Record<string, unknown> = {
     query: {
-      dateRanges: [
-        { startDate: "today", endDate: "today", name: "today" },
-        { startDate: "7daysAgo", endDate: "today", name: "7d" },
-      ],
-      dimensions: [{ name: "hostname" }, { name: "dateRange" }],
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: "hostname" }],
       metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
     },
   };
   if (GA_PROPERTY_ID) payload.property_id = GA_PROPERTY_ID;
 
-  const result = await fetchJSON<{ rows?: { dimensionValues: { value: string }[]; metricValues: { value: string }[] }[] }>(
-    "/api/google/analytics/run-report",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }
-  );
+  const result = await fetchJSON<{ rows?: GaApiRow[] }>("/api/google/analytics/run-report", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  return result.rows ?? [];
+}
+
+async function fetchGaStats(): Promise<GaStatsMap> {
+  const [todayRows, sevenDayRows] = await Promise.all([
+    fetchGaRange("today", "today"),
+    fetchGaRange("7daysAgo", "today"),
+  ]);
   const map: GaStatsMap = {};
-  for (const row of result.rows ?? []) {
+
+  for (const row of todayRows) {
     const host = row.dimensionValues[0].value;
-    const range = row.dimensionValues[1].value; // "date_range_0" = today, "date_range_1" = 7d
     const pv = parseInt(row.metricValues[0].value || "0", 10);
     const users = parseInt(row.metricValues[1].value || "0", 10);
     if (!map[host]) map[host] = { pageViewsToday: 0, activeUsersToday: 0, pageViews7d: 0, activeUsers7d: 0 };
-    if (range === "date_range_0") { map[host].pageViewsToday = pv; map[host].activeUsersToday = users; }
-    else { map[host].pageViews7d = pv; map[host].activeUsers7d = users; }
+    map[host].pageViewsToday = pv;
+    map[host].activeUsersToday = users;
   }
+
+  for (const row of sevenDayRows) {
+    const host = row.dimensionValues[0].value;
+    const pv = parseInt(row.metricValues[0].value || "0", 10);
+    const users = parseInt(row.metricValues[1].value || "0", 10);
+    if (!map[host]) map[host] = { pageViewsToday: 0, activeUsersToday: 0, pageViews7d: 0, activeUsers7d: 0 };
+    map[host].pageViews7d = pv;
+    map[host].activeUsers7d = users;
+  }
+
   return map;
 }
 
