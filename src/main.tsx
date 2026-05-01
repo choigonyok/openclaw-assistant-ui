@@ -4,6 +4,7 @@ import {
   Activity,
   ChartNoAxesCombined,
   Coins,
+  Globe,
   LogOut,
   Moon,
   PanelLeftClose,
@@ -11,8 +12,7 @@ import {
   RefreshCw,
   Send,
   Sun,
-  UserCircle,
-  WalletCards
+  UserCircle
 } from "lucide-react";
 import "./styles.css";
 
@@ -118,7 +118,7 @@ const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 const tabs: Record<TabID, { title: string; sub: string; icon: React.ComponentType<{ size?: number }> }> = {
   trader: { title: "Trader", sub: "Trader workspace", icon: ChartNoAxesCombined },
-  builder: { title: "Website Builder", sub: "Website Builder workspace", icon: WalletCards },
+  builder: { title: "Website Manager", sub: "사이트 상태 및 트래픽 대시보드", icon: Globe },
   "asset-manager": { title: "Asset Manager", sub: "Portfolio workspace", icon: Coins },
   health: { title: "OpenClaw Health", sub: "Mac Mini 실시간 모니터링", icon: Activity }
 };
@@ -282,7 +282,7 @@ function App() {
           </div>
         </header>
         <section className="content">
-          {activeTab === "asset-manager" ? <AssetManager /> : activeTab === "health" ? <HealthPanel /> : <CommandPanel tab={activeTab} />}
+          {activeTab === "asset-manager" ? <AssetManager /> : activeTab === "health" ? <HealthPanel /> : activeTab === "builder" ? <WebsiteManager /> : <CommandPanel tab={activeTab} />}
         </section>
       </main>
     </div>
@@ -307,6 +307,141 @@ function LoginView({ session, theme, onTheme }: { session: Session; theme: Theme
       <IconButton label="테마" onClick={onTheme}>
         {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
       </IconButton>
+    </div>
+  );
+}
+
+type SiteInfo = {
+  id: string;
+  name: string;
+  cf_status: string;
+  plan: string;
+  health: string;
+  http_status: number;
+  response_ms: number;
+  requests_today: number;
+  page_views_today: number;
+  uniques_today: number;
+  bandwidth_today: number;
+  requests_7d: number;
+  page_views_7d: number;
+  uniques_7d: number;
+  bandwidth_7d: number;
+  stats_error?: string;
+};
+
+type SitesResult = {
+  sites: SiteInfo[];
+  error?: string;
+};
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`;
+}
+
+function WebsiteManager() {
+  const [data, setData] = useState<SitesResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [ts, setTs] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const result = await fetchJSON<SitesResult>("/api/sites");
+      setData(result);
+      setTs(new Date().toLocaleTimeString("ko-KR"));
+    } catch (error) {
+      setData({ sites: [], error: error instanceof Error ? error.message : "데이터를 불러오지 못했습니다." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const sites = data?.sites || [];
+  const totalReqs7d = sites.reduce((s, x) => s + x.requests_7d, 0);
+  const totalReqsToday = sites.reduce((s, x) => s + x.requests_today, 0);
+  const upCount = sites.filter((x) => x.health === "up").length;
+  const totalUniques7d = sites.reduce((s, x) => s + x.uniques_7d, 0);
+
+  return (
+    <div className="workspace">
+      {data?.error && <div className="errorBox">{data.error}</div>}
+      <div className="summaryGrid">
+        <SummaryCard label="총 사이트" value={String(sites.length)} sub={`정상 ${upCount}개`} />
+        <SummaryCard label="오늘 요청" value={totalReqsToday.toLocaleString("ko-KR")} />
+        <SummaryCard label="7일 요청" value={totalReqs7d.toLocaleString("ko-KR")} />
+        <SummaryCard label="7일 방문자" value={totalUniques7d.toLocaleString("ko-KR")} />
+      </div>
+      <DataCard title="사이트 목록" timestamp={ts} onRefresh={load}>
+        {loading ? (
+          <div className="empty">불러오는 중...</div>
+        ) : sites.length === 0 && !data?.error ? (
+          <div className="empty">Cloudflare에 등록된 사이트가 없습니다.</div>
+        ) : (
+          <div className="siteGrid">
+            {sites.map((site) => (
+              <SiteCard key={site.id} site={site} />
+            ))}
+          </div>
+        )}
+      </DataCard>
+    </div>
+  );
+}
+
+function SiteCard({ site }: { site: SiteInfo }) {
+  const healthLabel = site.health === "up" ? "정상" : site.health === "degraded" ? "저하" : site.health === "down" ? "오류" : "확인중";
+  return (
+    <div className="siteCard">
+      <div className="siteCardHead">
+        <a className="siteName" href={`https://${site.name}`} target="_blank" rel="noopener noreferrer">
+          {site.name}
+        </a>
+        <div className="siteBadges">
+          <span className={`badge badge-health-${site.health || "unknown"}`}>{healthLabel}</span>
+          {site.cf_status && <span className={`badge badge-cf-${site.cf_status}`}>{site.cf_status}</span>}
+        </div>
+      </div>
+      <div className="siteMeta">
+        {site.response_ms > 0 && <span>{site.response_ms}ms</span>}
+        {site.http_status > 0 && <span>HTTP {site.http_status}</span>}
+        {site.plan && <span>{site.plan}</span>}
+      </div>
+      {site.stats_error ? (
+        <div className="siteStatsError">{site.stats_error}</div>
+      ) : (
+        <div className="siteMetrics">
+          <div className="siteMetric">
+            <span>오늘 요청</span>
+            <strong>{site.requests_today.toLocaleString("ko-KR")}</strong>
+          </div>
+          <div className="siteMetric">
+            <span>오늘 조회수</span>
+            <strong>{site.page_views_today.toLocaleString("ko-KR")}</strong>
+          </div>
+          <div className="siteMetric">
+            <span>7일 요청</span>
+            <strong>{site.requests_7d.toLocaleString("ko-KR")}</strong>
+          </div>
+          <div className="siteMetric">
+            <span>7일 방문자</span>
+            <strong>{site.uniques_7d.toLocaleString("ko-KR")}</strong>
+          </div>
+          <div className="siteMetric">
+            <span>7일 트래픽</span>
+            <strong>{formatBytes(site.bandwidth_7d)}</strong>
+          </div>
+          <div className="siteMetric">
+            <span>오늘 트래픽</span>
+            <strong>{formatBytes(site.bandwidth_today)}</strong>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

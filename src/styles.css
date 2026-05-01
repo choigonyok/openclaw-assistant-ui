@@ -505,6 +505,103 @@ a { color: inherit; text-decoration: none; }
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Website Manager ── */
+.siteGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.siteCard {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.siteCard:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(25,31,40,.08);
+  border-color: #dfe5ec;
+}
+:root[data-theme="dark"] .siteCard:hover { border-color: #3b4350; }
+.siteCardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.siteName {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text);
+  word-break: break-all;
+}
+.siteName:hover { color: var(--accent); }
+.siteBadges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.badge-health-up    { background: #e6f9f0; color: #0a6640; }
+.badge-health-degraded { background: rgba(245,159,0,.14); color: #9a5b00; }
+.badge-health-down  { background: var(--danger-bg); color: var(--danger); }
+.badge-health-unknown { background: var(--line); color: var(--muted); }
+.badge-cf-active  { background: var(--accent-bg); color: var(--accent); }
+.badge-cf-pending { background: rgba(245,159,0,.14); color: #9a5b00; }
+.badge-cf-paused  { background: var(--line); color: var(--muted); }
+:root[data-theme="dark"] .badge-health-up { background: #0d3324; color: #4ade80; }
+:root[data-theme="dark"] .badge-health-down { background: #301d22; color: #ff6b6b; }
+.siteMeta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.siteMeta span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.siteMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.siteMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.siteMetric span {
+  color: var(--weak);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+.siteMetric strong {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--text);
+}
+.siteStatsError {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+  margin-top: 6px;
+}
+
 @media (max-width: 860px) {
   .summaryGrid, .healthGrid { grid-template-columns: 1fr; }
   .sidebar { width: 76px; flex-basis: 76px; }
