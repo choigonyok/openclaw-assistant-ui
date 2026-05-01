@@ -379,6 +379,7 @@ function AssetManager() {
   const cryptoAssets = crypto?.assets || [];
   const kisWarnings = kisDiagnosticMessages(stock?.diagnostics);
   const krwCash = Math.max(0, parseAmount(summary?.cash_krw || summary?.cash_amt) || 0) + Math.max(0, parseAmount(crypto?.krw_balance) || 0);
+  const stockAccountTotal = Math.max(0, parseAmount(summary?.total_amt) || 0) + Math.max(0, parseAmount(summary?.cash_usd_krw) || 0);
   const cryptoTotal = Math.max(0, parseAmount(crypto?.total_eval) || 0);
   const cryptoOnly = Math.max(0, cryptoTotal - (parseAmount(crypto?.krw_balance) || 0));
   const overviewSlices: OverviewSlice[] = [
@@ -401,9 +402,9 @@ function AssetManager() {
       )}
       <Divider label="주식/금현물" />
       <div className="summaryGrid">
-        <SummaryCard label="총 자산(주식 한정)" value={krw(summary?.total_amt)} />
+        <SummaryCard label="주식 총 평가" value={krw(summary ? String(stockAccountTotal) : undefined)} />
         <SummaryCard label="원화 현금" value={krw(summary?.cash_krw || summary?.cash_amt)} />
-        <SummaryCard label="달러 현금" value={usd(summary?.cash_usd)} />
+        <SummaryCard label="달러 현금" value={krw(summary?.cash_usd_krw)} sub={usd(summary?.cash_usd)} />
         <SummaryCard label="평가손익" value={signedKRW(summary?.pnl_amt)} tone={pnlClass(summary?.pnl_amt)} sub={`매입금액 ${krw(summary?.buy_amt)}`} />
       </div>
       <DataCard title="보유종목" timestamp={stockTs} onRefresh={loadStocks}>
@@ -489,7 +490,7 @@ function PortfolioOverview({ slices }: { slices: OverviewSlice[] }) {
         {slices.map((item) => {
           const pct = total > 0 ? (item.value / total) * 100 : 0;
           return (
-            <div className="legendItem" key={item.label} onMouseEnter={() => setActiveSlice(item)} onMouseLeave={() => setActiveSlice(null)}>
+            <div className={`legendItem ${activeSlice?.label === item.label ? "active" : ""}`} key={item.label} onMouseEnter={() => setActiveSlice(item)} onMouseLeave={() => setActiveSlice(null)}>
               <span className="legendSwatch" style={{ background: item.color }} />
               <div>
                 <strong>{item.label}</strong>
