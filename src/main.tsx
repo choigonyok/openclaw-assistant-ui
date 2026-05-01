@@ -47,6 +47,16 @@ type Holding = {
 
 type AssetResult = {
   error?: string;
+  diagnostics?: {
+    domestic_tr_id?: string;
+    domestic_output2_rows: number;
+    foreign_tr_id?: string;
+    foreign_msg_code?: string;
+    foreign_msg?: string;
+    foreign_output2_rows: number;
+    foreign_output3_rows: number;
+    foreign_error?: string;
+  };
   summary?: {
     cash_amt: string;
     cash_krw: string;
@@ -154,6 +164,23 @@ function signedKRW(value?: string) {
   const n = parseAmount(value);
   if (Number.isNaN(n)) return krw(value);
   return `${n >= 0 ? "+" : ""}${krw(value)}`;
+}
+
+function kisDiagnosticMessages(diagnostics?: AssetResult["diagnostics"]) {
+  if (!diagnostics) return [];
+  const messages: string[] = [];
+  if (diagnostics.domestic_output2_rows === 0) {
+    messages.push(`국내 잔고조회(${diagnostics.domestic_tr_id || "TR"}) 응답에 예수금 요약(output2)이 없습니다.`);
+  }
+  if (diagnostics.foreign_error) {
+    messages.push(diagnostics.foreign_error);
+  } else if ((diagnostics.foreign_output2_rows || 0) + (diagnostics.foreign_output3_rows || 0) === 0) {
+    messages.push(`외화 잔고조회(${diagnostics.foreign_tr_id || "TR"}) 응답에 외화 예수금 행이 없습니다.`);
+  }
+  if (diagnostics.foreign_msg_code && diagnostics.foreign_msg_code !== "MCA00000") {
+    messages.push(`외화 잔고조회 메시지 ${diagnostics.foreign_msg_code}: ${diagnostics.foreign_msg || "-"}`);
+  }
+  return messages;
 }
 
 function parseAmount(value?: string) {
@@ -346,6 +373,7 @@ function AssetManager() {
   const summary = stock?.summary;
   const holdings = stock?.holdings || [];
   const cryptoAssets = crypto?.assets || [];
+  const kisWarnings = kisDiagnosticMessages(stock?.diagnostics);
   const krwCash = Math.max(0, parseAmount(summary?.cash_krw || summary?.cash_amt) || 0) + Math.max(0, parseAmount(crypto?.krw_balance) || 0);
   const cryptoTotal = Math.max(0, parseAmount(crypto?.total_eval) || 0);
   const cryptoOnly = Math.max(0, cryptoTotal - (parseAmount(crypto?.krw_balance) || 0));
@@ -360,6 +388,13 @@ function AssetManager() {
     <div className="workspace">
       <PortfolioOverview slices={overviewSlices} />
       {stock?.error && <div className="errorBox">{stock.error}</div>}
+      {kisWarnings.length > 0 && (
+        <div className="warningBox">
+          {kisWarnings.map((message) => (
+            <div key={message}>{message}</div>
+          ))}
+        </div>
+      )}
       <div className="summaryGrid">
         <SummaryCard label="총 평가금액" value={krw(summary?.total_amt)} />
         <SummaryCard label="원화 현금" value={krw(summary?.cash_krw || summary?.cash_amt)} />
