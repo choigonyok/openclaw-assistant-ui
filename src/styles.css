@@ -506,10 +506,78 @@ a { color: inherit; text-decoration: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Website Manager ── */
-.siteGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
+.siteZoneList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.siteZoneGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.subdomainList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-left: 20px;
+  border-left: 2px solid var(--line);
+  padding-left: 16px;
+  margin-top: 6px;
+}
+.subdomainCard {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 6px;
+  transition: border-color .14s ease;
+}
+.subdomainCard:hover { border-color: #dfe5ec; }
+:root[data-theme="dark"] .subdomainCard:hover { border-color: #3b4350; }
+.subdomainCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.subdomainName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  min-width: 0;
+}
+.subdomainPrefix {
+  color: var(--weak);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.subdomainName a {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+}
+.subdomainName a:hover strong { color: var(--accent); }
+.subdomainName strong { font-weight: 900; color: var(--text); }
+.subdomainSuffix { color: var(--muted); font-weight: 700; }
+.subdomainDnsType {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  flex-shrink: 0;
+}
+.subdomainTarget {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .siteCard {
   background: var(--card);

@@ -328,6 +328,10 @@ type SiteInfo = {
   uniques_7d: number;
   bandwidth_7d: number;
   stats_error?: string;
+  is_subdomain?: boolean;
+  parent_zone?: string;
+  dns_type?: string;
+  dns_content?: string;
 };
 
 type SitesResult = {
@@ -363,19 +367,29 @@ function WebsiteManager() {
   useEffect(() => { load(); }, []);
 
   const sites = data?.sites || [];
-  const totalReqs7d = sites.reduce((s, x) => s + x.requests_7d, 0);
-  const totalReqsToday = sites.reduce((s, x) => s + x.requests_today, 0);
+  const zones = sites.filter((s) => !s.is_subdomain);
+  const subdomains = sites.filter((s) => s.is_subdomain);
+  const totalReqs7d = zones.reduce((s, x) => s + x.requests_7d, 0);
+  const totalReqsToday = zones.reduce((s, x) => s + x.requests_today, 0);
   const upCount = sites.filter((x) => x.health === "up").length;
-  const totalUniques7d = sites.reduce((s, x) => s + x.uniques_7d, 0);
+  const totalUniques7d = zones.reduce((s, x) => s + x.uniques_7d, 0);
+
+  // 루트 도메인별로 서브도메인 묶기
+  const subsByZone: Record<string, SiteInfo[]> = {};
+  for (const sub of subdomains) {
+    const key = sub.parent_zone || "";
+    if (!subsByZone[key]) subsByZone[key] = [];
+    subsByZone[key].push(sub);
+  }
 
   return (
     <div className="workspace">
       {data?.error && <div className="errorBox">{data.error}</div>}
       <div className="summaryGrid">
-        <SummaryCard label="총 사이트" value={String(sites.length)} sub={`정상 ${upCount}개`} />
-        <SummaryCard label="오늘 요청" value={totalReqsToday.toLocaleString("ko-KR")} />
-        <SummaryCard label="7일 요청" value={totalReqs7d.toLocaleString("ko-KR")} />
-        <SummaryCard label="7일 방문자" value={totalUniques7d.toLocaleString("ko-KR")} />
+        <SummaryCard label="루트 도메인" value={String(zones.length)} sub={`서브도메인 ${subdomains.length}개`} />
+        <SummaryCard label="오늘 요청" value={totalReqsToday.toLocaleString("ko-KR")} sub="루트 도메인 합산" />
+        <SummaryCard label="7일 요청" value={totalReqs7d.toLocaleString("ko-KR")} sub="루트 도메인 합산" />
+        <SummaryCard label="7일 방문자" value={totalUniques7d.toLocaleString("ko-KR")} sub="루트 도메인 합산" />
       </div>
       <DataCard title="사이트 목록" timestamp={ts} onRefresh={load}>
         {loading ? (
@@ -383,9 +397,18 @@ function WebsiteManager() {
         ) : sites.length === 0 && !data?.error ? (
           <div className="empty">Cloudflare에 등록된 사이트가 없습니다.</div>
         ) : (
-          <div className="siteGrid">
-            {sites.map((site) => (
-              <SiteCard key={site.id} site={site} />
+          <div className="siteZoneList">
+            {zones.map((zone) => (
+              <div key={zone.id} className="siteZoneGroup">
+                <SiteCard site={zone} />
+                {subsByZone[zone.name] && subsByZone[zone.name].length > 0 && (
+                  <div className="subdomainList">
+                    {subsByZone[zone.name].map((sub) => (
+                      <SubdomainCard key={sub.id} site={sub} />
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -442,6 +465,35 @@ function SiteCard({ site }: { site: SiteInfo }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SubdomainCard({ site }: { site: SiteInfo }) {
+  const healthLabel = site.health === "up" ? "정상" : site.health === "degraded" ? "저하" : site.health === "down" ? "오류" : "확인중";
+  const subdomain = site.name.replace(`.${site.parent_zone}`, "");
+  return (
+    <div className="subdomainCard">
+      <div className="subdomainCardHead">
+        <div className="subdomainName">
+          <span className="subdomainPrefix">↳</span>
+          <a href={`https://${site.name}`} target="_blank" rel="noopener noreferrer">
+            <strong>{subdomain}</strong>
+            <span className="subdomainSuffix">.{site.parent_zone}</span>
+          </a>
+          {site.dns_type && (
+            <span className="subdomainDnsType">{site.dns_type}</span>
+          )}
+        </div>
+        <div className="siteBadges">
+          <span className={`badge badge-health-${site.health || "unknown"}`}>{healthLabel}</span>
+        </div>
+      </div>
+      <div className="siteMeta">
+        {site.response_ms > 0 && <span>{site.response_ms}ms</span>}
+        {site.http_status > 0 && <span>HTTP {site.http_status}</span>}
+        {site.dns_content && <span className="subdomainTarget" title={site.dns_content}>{site.dns_content.length > 30 ? site.dns_content.slice(0, 30) + "…" : site.dns_content}</span>}
+      </div>
     </div>
   );
 }
