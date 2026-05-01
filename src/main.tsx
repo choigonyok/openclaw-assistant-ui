@@ -50,6 +50,10 @@ type AssetResult = {
   diagnostics?: {
     domestic_tr_id?: string;
     domestic_output2_rows: number;
+    domestic_cash_tr_id?: string;
+    domestic_cash_msg_code?: string;
+    domestic_cash_msg?: string;
+    domestic_cash_error?: string;
     foreign_tr_id?: string;
     foreign_msg_code?: string;
     foreign_msg?: string;
@@ -171,6 +175,12 @@ function kisDiagnosticMessages(diagnostics?: AssetResult["diagnostics"]) {
   const messages: string[] = [];
   if (diagnostics.domestic_output2_rows === 0) {
     messages.push(`국내 잔고조회(${diagnostics.domestic_tr_id || "TR"}) 응답에 예수금 요약(output2)이 없습니다.`);
+  }
+  if (diagnostics.domestic_cash_error) {
+    messages.push(diagnostics.domestic_cash_error);
+  }
+  if (diagnostics.domestic_cash_msg_code && diagnostics.domestic_cash_msg_code !== "MCA00000") {
+    messages.push(`원화 매수가능금액 조회 메시지 ${diagnostics.domestic_cash_msg_code}: ${diagnostics.domestic_cash_msg || "-"}`);
   }
   if (diagnostics.foreign_error) {
     messages.push(diagnostics.foreign_error);
