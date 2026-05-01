@@ -140,10 +140,18 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers || {})
     }
   });
+  const text = await response.text();
   if (!response.ok) {
-    throw new Error(await response.text());
+    let message = text;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      message = parsed.error || text;
+    } catch {
+      // Some upstream errors are plain text or HTML.
+    }
+    throw new Error(message);
   }
-  return response.json() as Promise<T>;
+  return (text ? JSON.parse(text) : {}) as T;
 }
 
 function krw(value?: string) {
@@ -340,7 +348,7 @@ type SitesResult = {
   error?: string;
 };
 
-const GA_PROPERTY_ID = "535464309";
+const GA_PROPERTY_ID = (import.meta.env.VITE_GA_PROPERTY_ID || "").trim();
 
 type GaRow = {
   pageViewsToday: number;
@@ -351,21 +359,23 @@ type GaRow = {
 type GaStatsMap = Record<string, GaRow>;
 
 async function fetchGaStats(): Promise<GaStatsMap> {
+  const payload: Record<string, unknown> = {
+    query: {
+      dateRanges: [
+        { startDate: "today", endDate: "today", name: "today" },
+        { startDate: "7daysAgo", endDate: "today", name: "7d" },
+      ],
+      dimensions: [{ name: "hostname" }, { name: "dateRange" }],
+      metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
+    },
+  };
+  if (GA_PROPERTY_ID) payload.property_id = GA_PROPERTY_ID;
+
   const result = await fetchJSON<{ rows?: { dimensionValues: { value: string }[]; metricValues: { value: string }[] }[] }>(
     "/api/google/analytics/run-report",
     {
       method: "POST",
-      body: JSON.stringify({
-        property_id: GA_PROPERTY_ID,
-        query: {
-          dateRanges: [
-            { startDate: "today", endDate: "today", name: "today" },
-            { startDate: "7daysAgo", endDate: "today", name: "7d" },
-          ],
-          dimensions: [{ name: "hostname" }, { name: "dateRange" }],
-          metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
-        },
-      }),
+      body: JSON.stringify(payload),
     }
   );
   const map: GaStatsMap = {};
@@ -379,6 +389,13 @@ async function fetchGaStats(): Promise<GaStatsMap> {
     else { map[host].pageViews7d = pv; map[host].activeUsers7d = users; }
   }
   return map;
+}
+
+function apiErrorMessage(message?: string | null) {
+  if (!message) return "";
+  const googleMessage = message.match(/"message"\s*:\s*"([^"]+)"/)?.[1];
+  if (googleMessage) return googleMessage;
+  return message.replace(/\s+/g, " ").trim();
 }
 
 function formatBytes(bytes: number): string {
@@ -417,6 +434,7 @@ function WebsiteManager() {
   const totalReqsToday = zones.reduce((s, x) => s + x.requests_today, 0);
   const upCount = sites.filter((x) => x.health === "up").length;
   const totalGaPv7d = Object.values(gaStats).reduce((s, x) => s + x.pageViews7d, 0);
+  const gaErrorDetail = apiErrorMessage(gaError);
 
   const subsByZone: Record<string, SiteInfo[]> = {};
   for (const sub of subdomains) {
@@ -428,6 +446,7 @@ function WebsiteManager() {
   return (
     <div className="workspace">
       {data?.error && <div className="errorBox">{data.error}</div>}
+      {gaErrorDetail && <div className="errorBox">GA 연결 실패: {gaErrorDetail}</div>}
       <div className="summaryGrid">
         <SummaryCard label="루트 도메인" value={String(zones.length)} sub={`서브도메인 ${subdomains.length}개 · 정상 ${upCount}개`} />
         <SummaryCard label="CF 오늘 요청" value={totalReqsToday.toLocaleString("ko-KR")} sub="Cloudflare · 루트 합산" />
@@ -435,7 +454,7 @@ function WebsiteManager() {
         <SummaryCard
           label="GA 7일 페이지뷰"
           value={gaError ? "오류" : totalGaPv7d.toLocaleString("ko-KR")}
-          sub={gaError ? "Google Analytics 연결 실패" : "Google Analytics · 봇 제외"}
+          sub={gaError ? "상세 오류를 상단에 표시했습니다" : "Google Analytics · 봇 제외"}
         />
       </div>
       <DataCard title="사이트 목록" timestamp={ts} onRefresh={load}>
