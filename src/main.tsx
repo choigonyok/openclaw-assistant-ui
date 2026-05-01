@@ -340,6 +340,47 @@ type SitesResult = {
   error?: string;
 };
 
+const GA_PROPERTY_ID = "535464309";
+
+type GaRow = {
+  pageViewsToday: number;
+  activeUsersToday: number;
+  pageViews7d: number;
+  activeUsers7d: number;
+};
+type GaStatsMap = Record<string, GaRow>;
+
+async function fetchGaStats(): Promise<GaStatsMap> {
+  const result = await fetchJSON<{ rows?: { dimensionValues: { value: string }[]; metricValues: { value: string }[] }[] }>(
+    "/api/google/analytics/run-report",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        property_id: GA_PROPERTY_ID,
+        query: {
+          dateRanges: [
+            { startDate: "today", endDate: "today", name: "today" },
+            { startDate: "7daysAgo", endDate: "today", name: "7d" },
+          ],
+          dimensions: [{ name: "hostname" }, { name: "dateRange" }],
+          metrics: [{ name: "screenPageViews" }, { name: "activeUsers" }],
+        },
+      }),
+    }
+  );
+  const map: GaStatsMap = {};
+  for (const row of result.rows ?? []) {
+    const host = row.dimensionValues[0].value;
+    const range = row.dimensionValues[1].value; // "date_range_0" = today, "date_range_1" = 7d
+    const pv = parseInt(row.metricValues[0].value || "0", 10);
+    const users = parseInt(row.metricValues[1].value || "0", 10);
+    if (!map[host]) map[host] = { pageViewsToday: 0, activeUsersToday: 0, pageViews7d: 0, activeUsers7d: 0 };
+    if (range === "date_range_0") { map[host].pageViewsToday = pv; map[host].activeUsersToday = users; }
+    else { map[host].pageViews7d = pv; map[host].activeUsers7d = users; }
+  }
+  return map;
+}
+
 function formatBytes(bytes: number): string {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -349,20 +390,22 @@ function formatBytes(bytes: number): string {
 
 function WebsiteManager() {
   const [data, setData] = useState<SitesResult | null>(null);
+  const [gaStats, setGaStats] = useState<GaStatsMap>({});
+  const [gaError, setGaError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [ts, setTs] = useState("");
 
   const load = async () => {
     setLoading(true);
-    try {
-      const result = await fetchJSON<SitesResult>("/api/sites");
-      setData(result);
-      setTs(new Date().toLocaleTimeString("ko-KR"));
-    } catch (error) {
-      setData({ sites: [], error: error instanceof Error ? error.message : "데이터를 불러오지 못했습니다." });
-    } finally {
-      setLoading(false);
-    }
+    const [sitesRes, gaRes] = await Promise.allSettled([
+      fetchJSON<SitesResult>("/api/sites"),
+      fetchGaStats(),
+    ]);
+    setData(sitesRes.status === "fulfilled" ? sitesRes.value : { sites: [], error: (sitesRes.reason as Error).message });
+    if (gaRes.status === "fulfilled") { setGaStats(gaRes.value); setGaError(null); }
+    else { setGaStats({}); setGaError((gaRes.reason as Error).message); }
+    setTs(new Date().toLocaleTimeString("ko-KR"));
+    setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
@@ -373,9 +416,8 @@ function WebsiteManager() {
   const totalReqs7d = zones.reduce((s, x) => s + x.requests_7d, 0);
   const totalReqsToday = zones.reduce((s, x) => s + x.requests_today, 0);
   const upCount = sites.filter((x) => x.health === "up").length;
-  const totalUniques7d = zones.reduce((s, x) => s + x.uniques_7d, 0);
+  const totalGaPv7d = Object.values(gaStats).reduce((s, x) => s + x.pageViews7d, 0);
 
-  // 루트 도메인별로 서브도메인 묶기
   const subsByZone: Record<string, SiteInfo[]> = {};
   for (const sub of subdomains) {
     const key = sub.parent_zone || "";
@@ -387,10 +429,14 @@ function WebsiteManager() {
     <div className="workspace">
       {data?.error && <div className="errorBox">{data.error}</div>}
       <div className="summaryGrid">
-        <SummaryCard label="루트 도메인" value={String(zones.length)} sub={`서브도메인 ${subdomains.length}개`} />
-        <SummaryCard label="오늘 요청" value={totalReqsToday.toLocaleString("ko-KR")} sub="루트 도메인 합산" />
-        <SummaryCard label="7일 요청" value={totalReqs7d.toLocaleString("ko-KR")} sub="루트 도메인 합산" />
-        <SummaryCard label="7일 방문자" value={totalUniques7d.toLocaleString("ko-KR")} sub="루트 도메인 합산" />
+        <SummaryCard label="루트 도메인" value={String(zones.length)} sub={`서브도메인 ${subdomains.length}개 · 정상 ${upCount}개`} />
+        <SummaryCard label="CF 오늘 요청" value={totalReqsToday.toLocaleString("ko-KR")} sub="Cloudflare · 루트 합산" />
+        <SummaryCard label="CF 7일 요청" value={totalReqs7d.toLocaleString("ko-KR")} sub="Cloudflare · 루트 합산" />
+        <SummaryCard
+          label="GA 7일 페이지뷰"
+          value={gaError ? "오류" : totalGaPv7d.toLocaleString("ko-KR")}
+          sub={gaError ? "Google Analytics 연결 실패" : "Google Analytics · 봇 제외"}
+        />
       </div>
       <DataCard title="사이트 목록" timestamp={ts} onRefresh={load}>
         {loading ? (
@@ -401,11 +447,11 @@ function WebsiteManager() {
           <div className="siteZoneList">
             {zones.map((zone) => (
               <div key={zone.id} className="siteZoneGroup">
-                <SiteCard site={zone} />
+                <SiteCard site={zone} ga={gaStats[zone.name]} />
                 {subsByZone[zone.name] && subsByZone[zone.name].length > 0 && (
                   <div className="subdomainList">
                     {subsByZone[zone.name].map((sub) => (
-                      <SubdomainCard key={sub.id} site={sub} />
+                      <SubdomainCard key={sub.id} site={sub} ga={gaStats[sub.name]} />
                     ))}
                   </div>
                 )}
@@ -418,7 +464,7 @@ function WebsiteManager() {
   );
 }
 
-function SiteCard({ site }: { site: SiteInfo }) {
+function SiteCard({ site, ga }: { site: SiteInfo; ga?: GaRow }) {
   const healthLabel = site.health === "up" ? "정상" : site.health === "degraded" ? "저하" : site.health === "down" ? "오류" : "확인중";
   return (
     <div className="siteCard">
@@ -436,36 +482,34 @@ function SiteCard({ site }: { site: SiteInfo }) {
         {site.http_status > 0 && <span>HTTP {site.http_status}</span>}
         {site.plan && <span>{site.plan}</span>}
       </div>
-      {site.dns_error && (
-        <div className="siteStatsError">DNS 조회 실패: {site.dns_error}</div>
-      )}
+      {site.dns_error && <div className="siteStatsError">DNS 조회 실패: {site.dns_error}</div>}
       {site.stats_error ? (
         <div className="siteStatsError">{site.stats_error}</div>
       ) : (
         <div className="siteMetrics">
           <div className="siteMetric">
-            <span>오늘 요청</span>
+            <span>CF 오늘 요청</span>
             <strong>{site.requests_today.toLocaleString("ko-KR")}</strong>
           </div>
           <div className="siteMetric">
-            <span>오늘 조회수</span>
-            <strong>{site.page_views_today.toLocaleString("ko-KR")}</strong>
-          </div>
-          <div className="siteMetric">
-            <span>7일 요청</span>
+            <span>CF 7일 요청</span>
             <strong>{site.requests_7d.toLocaleString("ko-KR")}</strong>
           </div>
           <div className="siteMetric">
-            <span>7일 방문자</span>
+            <span>CF 7일 방문자</span>
             <strong>{site.uniques_7d.toLocaleString("ko-KR")}</strong>
           </div>
-          <div className="siteMetric">
-            <span>7일 트래픽</span>
-            <strong>{formatBytes(site.bandwidth_7d)}</strong>
+          <div className="siteMetric siteMetricGa">
+            <span>GA 오늘 PV</span>
+            <strong>{ga ? ga.pageViewsToday.toLocaleString("ko-KR") : "—"}</strong>
           </div>
-          <div className="siteMetric">
-            <span>오늘 트래픽</span>
-            <strong>{formatBytes(site.bandwidth_today)}</strong>
+          <div className="siteMetric siteMetricGa">
+            <span>GA 7일 PV</span>
+            <strong>{ga ? ga.pageViews7d.toLocaleString("ko-KR") : "—"}</strong>
+          </div>
+          <div className="siteMetric siteMetricGa">
+            <span>GA 7일 사용자</span>
+            <strong>{ga ? ga.activeUsers7d.toLocaleString("ko-KR") : "—"}</strong>
           </div>
         </div>
       )}
@@ -473,7 +517,7 @@ function SiteCard({ site }: { site: SiteInfo }) {
   );
 }
 
-function SubdomainCard({ site }: { site: SiteInfo }) {
+function SubdomainCard({ site, ga }: { site: SiteInfo; ga?: GaRow }) {
   const healthLabel = site.health === "up" ? "정상" : site.health === "degraded" ? "저하" : site.health === "down" ? "오류" : "확인중";
   const subdomain = site.name.replace(`.${site.parent_zone}`, "");
   return (
@@ -485,9 +529,7 @@ function SubdomainCard({ site }: { site: SiteInfo }) {
             <strong>{subdomain}</strong>
             <span className="subdomainSuffix">.{site.parent_zone}</span>
           </a>
-          {site.dns_type && (
-            <span className="subdomainDnsType">{site.dns_type}</span>
-          )}
+          {site.dns_type && <span className="subdomainDnsType">{site.dns_type}</span>}
         </div>
         <div className="siteBadges">
           <span className={`badge badge-health-${site.health || "unknown"}`}>{healthLabel}</span>
@@ -498,6 +540,22 @@ function SubdomainCard({ site }: { site: SiteInfo }) {
         {site.http_status > 0 && <span>HTTP {site.http_status}</span>}
         {site.dns_content && <span className="subdomainTarget" title={site.dns_content}>{site.dns_content.length > 30 ? site.dns_content.slice(0, 30) + "…" : site.dns_content}</span>}
       </div>
+      {ga && (
+        <div className="subdomainGa">
+          <div className="subdomainGaItem">
+            <span>오늘 PV</span>
+            <strong>{ga.pageViewsToday.toLocaleString("ko-KR")}</strong>
+          </div>
+          <div className="subdomainGaItem">
+            <span>7일 PV</span>
+            <strong>{ga.pageViews7d.toLocaleString("ko-KR")}</strong>
+          </div>
+          <div className="subdomainGaItem">
+            <span>7일 사용자</span>
+            <strong>{ga.activeUsers7d.toLocaleString("ko-KR")}</strong>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
