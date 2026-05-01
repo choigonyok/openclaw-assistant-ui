@@ -383,7 +383,7 @@ function AssetManager() {
   const cryptoOnly = Math.max(0, cryptoTotal - (parseAmount(crypto?.krw_balance) || 0));
   const overviewSlices: OverviewSlice[] = [
     { label: "코인", value: cryptoOnly, display: krw(String(cryptoOnly)), color: "#00b894" },
-    { label: "달러", value: Math.max(0, parseAmount(summary?.cash_usd_krw) || 0), display: usd(summary?.cash_usd), color: "#7c3aed" },
+    { label: "달러", value: Math.max(0, parseAmount(summary?.cash_usd_krw) || 0), display: krw(summary?.cash_usd_krw), color: "#7c3aed" },
     { label: "원화", value: krwCash, display: krw(String(krwCash)), color: "#f59f00" },
     { label: "주식", value: Math.max(0, parseAmount(summary?.stock_amt) || 0), display: krw(summary?.stock_amt), color: "#3182f6" }
   ];
@@ -399,8 +399,9 @@ function AssetManager() {
           ))}
         </div>
       )}
+      <Divider label="주식/금현물" />
       <div className="summaryGrid">
-        <SummaryCard label="총 평가금액" value={krw(summary?.total_amt)} />
+        <SummaryCard label="총 자산(주식 한정)" value={krw(summary?.total_amt)} />
         <SummaryCard label="원화 현금" value={krw(summary?.cash_krw || summary?.cash_amt)} />
         <SummaryCard label="달러 현금" value={usd(summary?.cash_usd)} />
         <SummaryCard label="평가손익" value={signedKRW(summary?.pnl_amt)} tone={pnlClass(summary?.pnl_amt)} sub={`매입금액 ${krw(summary?.buy_amt)}`} />
@@ -424,8 +425,10 @@ function AssetManager() {
 }
 
 function PortfolioOverview({ slices }: { slices: OverviewSlice[] }) {
+  const [activeSlice, setActiveSlice] = useState<OverviewSlice | null>(null);
   const total = slices.reduce((sum, item) => sum + item.value, 0);
   let cursor = 0;
+  let segmentCursor = 0;
   const gradient = total > 0
     ? slices
         .filter((item) => item.value > 0)
@@ -436,11 +439,46 @@ function PortfolioOverview({ slices }: { slices: OverviewSlice[] }) {
         })
         .join(", ")
     : "var(--line) 0% 100%";
+  const segments = total > 0
+    ? slices
+        .filter((item) => item.value > 0)
+        .map((item) => {
+          const pct = (item.value / total) * 100;
+          const segment = { item, pct, offset: segmentCursor };
+          segmentCursor += pct;
+          return segment;
+        })
+    : [];
+  const hovered = activeSlice && total > 0 ? { item: activeSlice, pct: (activeSlice.value / total) * 100 } : null;
 
   return (
     <section className="overviewPanel">
       <div className="overviewDonutWrap">
-        <div className="donutChart" style={{ background: `conic-gradient(${gradient})` }} role="img" aria-label="포트폴리오 비중 도넛 차트">
+        <div className="donutChart" style={{ background: `conic-gradient(${gradient})` }} role="img" aria-label="포트폴리오 비중 도넛 차트" onMouseLeave={() => setActiveSlice(null)}>
+          <svg className="donutHitArea" viewBox="0 0 120 120" aria-hidden="true">
+            {segments.map(({ item, pct, offset }) => (
+              <circle
+                key={item.label}
+                className="donutSegment"
+                cx="60"
+                cy="60"
+                r="44"
+                pathLength="100"
+                stroke={item.color}
+                strokeDasharray={`${pct} ${100 - pct}`}
+                strokeDashoffset={-offset}
+                onMouseEnter={() => setActiveSlice(item)}
+                onFocus={() => setActiveSlice(item)}
+              />
+            ))}
+          </svg>
+          {hovered && (
+            <div className="donutTooltip">
+              <strong>{hovered.item.label}</strong>
+              <span>{hovered.pct.toFixed(1)}%</span>
+              <em>{hovered.item.display}</em>
+            </div>
+          )}
           <div className="donutHole">
             <span>총자산</span>
             <strong>{krw(String(total))}</strong>
@@ -451,7 +489,7 @@ function PortfolioOverview({ slices }: { slices: OverviewSlice[] }) {
         {slices.map((item) => {
           const pct = total > 0 ? (item.value / total) * 100 : 0;
           return (
-            <div className="legendItem" key={item.label}>
+            <div className="legendItem" key={item.label} onMouseEnter={() => setActiveSlice(item)} onMouseLeave={() => setActiveSlice(null)}>
               <span className="legendSwatch" style={{ background: item.color }} />
               <div>
                 <strong>{item.label}</strong>
