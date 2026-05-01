@@ -332,6 +332,7 @@ type SiteInfo = {
   parent_zone?: string;
   dns_type?: string;
   dns_content?: string;
+  dns_error?: string;
 };
 
 type SitesResult = {
@@ -435,6 +436,9 @@ function SiteCard({ site }: { site: SiteInfo }) {
         {site.http_status > 0 && <span>HTTP {site.http_status}</span>}
         {site.plan && <span>{site.plan}</span>}
       </div>
+      {site.dns_error && (
+        <div className="siteStatsError">DNS 조회 실패: {site.dns_error}</div>
+      )}
       {site.stats_error ? (
         <div className="siteStatsError">{site.stats_error}</div>
       ) : (
