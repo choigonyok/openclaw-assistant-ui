@@ -142,16 +142,24 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const text = await response.text();
   if (!response.ok) {
-    let message = text;
-    try {
-      const parsed = JSON.parse(text) as { error?: string };
-      message = parsed.error || text;
-    } catch {
-      // Some upstream errors are plain text or HTML.
-    }
-    throw new Error(message);
+    throw new Error(formatHTTPError(response.status, text));
   }
   return (text ? JSON.parse(text) : {}) as T;
+}
+
+function formatHTTPError(status: number, text: string) {
+  try {
+    const parsed = JSON.parse(text) as { error?: string };
+    if (parsed.error) return parsed.error;
+  } catch {
+    // Some upstream errors are plain text or HTML.
+  }
+  const title = text.match(/<title>(.*?)<\/title>/is)?.[1]?.replace(/\s+/g, " ").trim();
+  if (title?.includes("502: Bad gateway") || text.includes("Error code 502")) {
+    return "Cloudflare 502 Bad gateway: assistant 서버 또는 프록시가 요청을 처리하지 못했습니다. 컨테이너/터널 로그를 확인하세요.";
+  }
+  if (title) return `${status} ${title}`;
+  return text.replace(/\s+/g, " ").trim() || `HTTP ${status}`;
 }
 
 function krw(value?: string) {
