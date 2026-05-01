@@ -49,6 +49,9 @@ type AssetResult = {
   error?: string;
   summary?: {
     cash_amt: string;
+    cash_krw: string;
+    cash_usd: string;
+    cash_usd_krw: string;
     stock_amt: string;
     total_amt: string;
     buy_amt: string;
@@ -90,6 +93,13 @@ type CommandResult = {
   error?: string;
 };
 
+type OverviewSlice = {
+  label: string;
+  value: number;
+  display: string;
+  color: string;
+};
+
 const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 const tabs: Record<TabID, { title: string; sub: string; icon: React.ComponentType<{ size?: number }> }> = {
@@ -123,21 +133,31 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function krw(value?: string) {
-  const n = Number.parseInt(value || "", 10);
+  const n = parseAmount(value);
   if (Number.isNaN(n)) return value || "-";
-  return `${n.toLocaleString("ko-KR")}원`;
+  return `${Math.round(n).toLocaleString("ko-KR")}원`;
+}
+
+function usd(value?: string) {
+  const n = parseAmount(value);
+  if (Number.isNaN(n)) return value || "-";
+  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 function num(value?: string) {
-  const n = Number.parseInt(value || "", 10);
+  const n = parseAmount(value);
   if (Number.isNaN(n)) return value || "-";
-  return n.toLocaleString("ko-KR");
+  return n.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
 }
 
 function signedKRW(value?: string) {
-  const n = Number.parseInt(value || "", 10);
+  const n = parseAmount(value);
   if (Number.isNaN(n)) return krw(value);
   return `${n >= 0 ? "+" : ""}${krw(value)}`;
+}
+
+function parseAmount(value?: string) {
+  return Number.parseFloat((value || "").replace(/,/g, ""));
 }
 
 function pnlClass(value?: string) {
@@ -326,13 +346,24 @@ function AssetManager() {
   const summary = stock?.summary;
   const holdings = stock?.holdings || [];
   const cryptoAssets = crypto?.assets || [];
+  const krwCash = Math.max(0, parseAmount(summary?.cash_krw || summary?.cash_amt) || 0) + Math.max(0, parseAmount(crypto?.krw_balance) || 0);
+  const cryptoTotal = Math.max(0, parseAmount(crypto?.total_eval) || 0);
+  const cryptoOnly = Math.max(0, cryptoTotal - (parseAmount(crypto?.krw_balance) || 0));
+  const overviewSlices: OverviewSlice[] = [
+    { label: "코인", value: cryptoOnly, display: krw(String(cryptoOnly)), color: "#00b894" },
+    { label: "달러", value: Math.max(0, parseAmount(summary?.cash_usd_krw) || 0), display: usd(summary?.cash_usd), color: "#7c3aed" },
+    { label: "원화", value: krwCash, display: krw(String(krwCash)), color: "#f59f00" },
+    { label: "주식", value: Math.max(0, parseAmount(summary?.stock_amt) || 0), display: krw(summary?.stock_amt), color: "#3182f6" }
+  ];
 
   return (
     <div className="workspace">
+      <PortfolioOverview slices={overviewSlices} />
       {stock?.error && <div className="errorBox">{stock.error}</div>}
       <div className="summaryGrid">
         <SummaryCard label="총 평가금액" value={krw(summary?.total_amt)} />
-        <SummaryCard label="예수금" value={krw(summary?.cash_amt)} />
+        <SummaryCard label="원화 현금" value={krw(summary?.cash_krw || summary?.cash_amt)} />
+        <SummaryCard label="달러 현금" value={usd(summary?.cash_usd)} />
         <SummaryCard label="평가손익" value={signedKRW(summary?.pnl_amt)} tone={pnlClass(summary?.pnl_amt)} sub={`매입금액 ${krw(summary?.buy_amt)}`} />
       </div>
       <DataCard title="보유종목" timestamp={stockTs} onRefresh={loadStocks}>
@@ -350,6 +381,49 @@ function AssetManager() {
         <CryptoTable assets={cryptoAssets} />
       </DataCard>
     </div>
+  );
+}
+
+function PortfolioOverview({ slices }: { slices: OverviewSlice[] }) {
+  const total = slices.reduce((sum, item) => sum + item.value, 0);
+  let cursor = 0;
+  const gradient = total > 0
+    ? slices
+        .filter((item) => item.value > 0)
+        .map((item) => {
+          const start = cursor;
+          cursor += (item.value / total) * 100;
+          return `${item.color} ${start}% ${cursor}%`;
+        })
+        .join(", ")
+    : "var(--line) 0% 100%";
+
+  return (
+    <section className="overviewPanel">
+      <div className="overviewDonutWrap">
+        <div className="donutChart" style={{ background: `conic-gradient(${gradient})` }} role="img" aria-label="포트폴리오 비중 도넛 차트">
+          <div className="donutHole">
+            <span>총자산</span>
+            <strong>{krw(String(total))}</strong>
+          </div>
+        </div>
+      </div>
+      <div className="overviewLegend">
+        {slices.map((item) => {
+          const pct = total > 0 ? (item.value / total) * 100 : 0;
+          return (
+            <div className="legendItem" key={item.label}>
+              <span className="legendSwatch" style={{ background: item.color }} />
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.display}</span>
+              </div>
+              <em>{pct.toFixed(1)}%</em>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

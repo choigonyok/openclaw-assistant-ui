@@ -187,7 +187,7 @@ a { color: inherit; text-decoration: none; }
 
 .content { padding: 24px 28px; }
 .workspace { max-width: 1160px; margin: 0 auto; }
-.cmdCard, .dataCard, .summaryCard, .healthCard {
+.cmdCard, .dataCard, .summaryCard, .healthCard, .overviewPanel {
   background: var(--card);
   border-radius: 8px;
   box-shadow: var(--shadow);
@@ -233,11 +233,94 @@ a { color: inherit; text-decoration: none; }
 
 .summaryGrid, .healthGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
 }
+.summaryGrid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.healthGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .summaryCard, .healthCard { padding: 20px; }
+.overviewPanel {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 22px;
+  margin-bottom: 16px;
+}
+.overviewDonutWrap {
+  display: grid;
+  place-items: center;
+}
+.donutChart {
+  width: min(260px, 100%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.donutHole {
+  width: 62%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: center;
+  padding: 12px;
+}
+.donutHole span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.donutHole strong {
+  margin-top: 5px;
+  font-size: 18px;
+  line-height: 1.15;
+}
+.overviewLegend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.legendItem {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.legendSwatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.legendItem strong,
+.legendItem span {
+  display: block;
+}
+.legendItem strong {
+  font-size: 13px;
+}
+.legendItem span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.legendItem em {
+  color: var(--text);
+  font-size: 18px;
+  font-style: normal;
+  font-weight: 900;
+}
 .cardValue {
   color: var(--text);
   font-size: 22px;
@@ -437,6 +520,7 @@ a { color: inherit; text-decoration: none; }
   .dataCard,
   .summaryCard,
   .healthCard,
+  .overviewPanel,
   .result {
     border-radius: 8px;
   }
@@ -457,6 +541,22 @@ a { color: inherit; text-decoration: none; }
   .healthGrid {
     gap: 10px;
     margin-bottom: 12px;
+  }
+  .overviewPanel {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .donutChart {
+    width: min(230px, 72vw);
+  }
+  .overviewLegend {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .legendItem {
+    min-height: 52px;
   }
   .summaryCard,
   .healthCard {
