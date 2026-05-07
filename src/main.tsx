@@ -49,6 +49,7 @@ type AssetResult = {
   error?: string;
   diagnostics?: {
     domestic_tr_id?: string;
+    domestic_output1_rows: number;
     domestic_output2_rows: number;
     domestic_cash_tr_id?: string;
     domestic_cash_msg_code?: string;
@@ -186,9 +187,12 @@ function signedKRW(value?: string) {
   return `${n >= 0 ? "+" : ""}${krw(value)}`;
 }
 
-function kisDiagnosticMessages(diagnostics?: AssetResult["diagnostics"]) {
+function kisDiagnosticMessages(diagnostics?: AssetResult["diagnostics"], holdingsCount?: number) {
   if (!diagnostics) return [];
   const messages: string[] = [];
+  if ((diagnostics.domestic_output1_rows ?? 0) > 0 && holdingsCount === 0) {
+    messages.push(`국내 잔고조회(${diagnostics.domestic_tr_id || "TR"}) output1에 ${diagnostics.domestic_output1_rows}개 항목이 있으나 수량이 모두 0으로 표시됩니다. KIS_MOCK 설정이나 계좌번호를 확인하세요.`);
+  }
   if (diagnostics.domestic_output2_rows === 0) {
     messages.push(`국내 잔고조회(${diagnostics.domestic_tr_id || "TR"}) 응답에 예수금 요약(output2)이 없습니다.`);
   }
@@ -671,7 +675,7 @@ function AssetManager() {
   const summary = stock?.summary;
   const holdings = stock?.holdings || [];
   const cryptoAssets = crypto?.assets || [];
-  const kisWarnings = kisDiagnosticMessages(stock?.diagnostics);
+  const kisWarnings = kisDiagnosticMessages(stock?.diagnostics, holdings.length);
   const krwCash = Math.max(0, parseAmount(summary?.cash_krw || summary?.cash_amt) || 0) + Math.max(0, parseAmount(crypto?.krw_balance) || 0);
   const stockAccountTotal = Math.max(0, parseAmount(summary?.total_amt) || 0) + Math.max(0, parseAmount(summary?.cash_usd_krw) || 0);
   const cryptoTotal = Math.max(0, parseAmount(crypto?.total_eval) || 0);
