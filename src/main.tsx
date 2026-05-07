@@ -776,8 +776,13 @@ type TradingStatus = {
   current_rsi: number;
   current_ema5: number;
   current_ema20: number;
+  current_atr?: number;
   vol_ratio: number;
   dry_run: boolean;
+  total_capital_in?: number;
+  cash_krw?: number;
+  btc_qty?: number;
+  btc_eval_krw?: number;
 };
 
 // ── TradingPanel ──────────────────────────────────────────────────────────────
@@ -786,6 +791,9 @@ function TradingPanel() {
   const [status, setStatus] = useState<TradingStatus | null>(null);
   const [ts, setTs] = useState("");
   const [controlling, setControlling] = useState(false);
+  const [showCapitalForm, setShowCapitalForm] = useState(false);
+  const [capitalAction, setCapitalAction] = useState<"deposit" | "withdraw" | "set_capital">("deposit");
+  const [capitalAmount, setCapitalAmount] = useState("");
 
   const load = async () => {
     try {
@@ -817,6 +825,24 @@ function TradingPanel() {
     }
   };
 
+  const submitCapitalChange = async (e: FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(capitalAmount);
+    if (!Number.isFinite(amount) || amount < 0) return;
+    setControlling(true);
+    try {
+      await fetchJSON("/api/trading/control", {
+        method: "POST",
+        body: JSON.stringify({ action: capitalAction, amount })
+      });
+      setCapitalAmount("");
+      setShowCapitalForm(false);
+      await load();
+    } finally {
+      setControlling(false);
+    }
+  };
+
   if (!status) return <div className="empty">불러오는 중...</div>;
 
   const pos = status.position;
@@ -836,6 +862,14 @@ function TradingPanel() {
     return equity;
   })();
 
+  // 자산 카드 계산
+  const cashKRW = status.cash_krw ?? 0;
+  const btcEvalKRW = status.btc_eval_krw ?? (pos ? pos.btc_qty * status.current_price : 0);
+  const currentTotal = cashKRW + btcEvalKRW;
+  const initialCapital = status.total_capital_in ?? 0;
+  const capitalChange = currentTotal - initialCapital;
+  const capitalChangePct = initialCapital > 0 ? (capitalChange / initialCapital) * 100 : 0;
+
   return (
     <>
       {status.error && <div className="errorBox">{status.error}</div>}
@@ -852,12 +886,143 @@ function TradingPanel() {
         </button>
       </div>
 
-      {/* Current indicators */}
+      {/* 자산 카드 (초기자산 / 현재자산 / 자산 변화율) */}
+      <Divider label="자산 현황" />
       <div className="summaryGrid">
-        <SummaryCard label="현재 BTC 가격" value={krw(String(Math.round(status.current_price)))} />
-        <SummaryCard label="RSI (14)" value={status.current_rsi ? status.current_rsi.toFixed(1) : "-"} sub={`EMA5: ${Math.round(status.current_ema5 / 1e6)}M  EMA20: ${Math.round(status.current_ema20 / 1e6)}M`} />
-        <SummaryCard label="거래량 비율" value={status.vol_ratio ? `${status.vol_ratio.toFixed(2)}×` : "-"} sub="vol / 20일 평균" />
-        <SummaryCard label="마지막 신호" value={status.last_signal || "-"} sub={status.last_checked || ""} />
+        <SummaryCard
+          label="초기 자산"
+          value={krw(String(Math.round(initialCapital)))}
+          sub="누적 입금 - 출금"
+          info={
+            <div>
+              <p>거래 활동과 무관한 <strong>봇에 투입된 순 자본</strong>입니다.</p>
+              <p>(첫 실행 시 잔고) + (이후 입금 합계) − (출금 합계) 로 계산됩니다.</p>
+              <p>이 값은 매수/매도 손익으로 변하지 않으므로 <strong>자산 변화율</strong> 카드의 분모 역할을 합니다.</p>
+              <p>입금/출금이 발생하면 아래 <em>자본 조정</em> 버튼으로 직접 갱신해 주세요.</p>
+            </div>
+          }
+        />
+        <SummaryCard
+          label="현재 자산"
+          value={krw(String(Math.round(currentTotal)))}
+          sub={`현금 ${krw(String(Math.round(cashKRW)))} + BTC ${krw(String(Math.round(btcEvalKRW)))}`}
+          info={
+            <div>
+              <p>지금 시점의 <strong>총 평가 자산</strong>입니다.</p>
+              <p>= 현재 KRW 잔고 + BTC 보유량 × 현재가</p>
+              <p>매 30분 tick마다 Upbit 잔고 API로 갱신됩니다. 포지션이 없으면 KRW 현금 = 현재 자산.</p>
+            </div>
+          }
+        />
+        <SummaryCard
+          label="자산 변화율"
+          value={`${capitalChangePct >= 0 ? "+" : ""}${capitalChangePct.toFixed(2)}%`}
+          tone={capitalChange >= 0 ? "pos" : "neg"}
+          sub={signedKRW(String(Math.round(capitalChange)))}
+          info={
+            <div>
+              <p>봇이 만들어낸 <strong>순수 트레이딩 수익률</strong>입니다.</p>
+              <p>= (현재 자산 − 초기 자산) / 초기 자산 × 100%</p>
+              <p>입금/출금은 초기 자산 분모도 함께 갱신되므로 변화율에 영향을 주지 않습니다 — 오직 매매 손익만 반영.</p>
+              <p>아래의 <strong>누적 실현 손익</strong> 카드는 청산된 거래만 합산하지만, 이 카드는 <strong>현재 미실현 포지션</strong>까지 포함한 실시간 평가입니다.</p>
+            </div>
+          }
+        />
+      </div>
+
+      <div className="capitalAdjustWrap">
+        <button type="button" className="ghostButton" onClick={() => setShowCapitalForm((v) => !v)}>
+          {showCapitalForm ? "닫기" : "자본 조정 (입금/출금/직접 설정)"}
+        </button>
+        {showCapitalForm && (
+          <form className="capitalAdjustForm" onSubmit={submitCapitalChange}>
+            <select value={capitalAction} onChange={(e) => setCapitalAction(e.target.value as typeof capitalAction)}>
+              <option value="deposit">입금 (초기 자산 +)</option>
+              <option value="withdraw">출금 (초기 자산 −)</option>
+              <option value="set_capital">초기 자산 직접 설정</option>
+            </select>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              placeholder="금액 (KRW)"
+              value={capitalAmount}
+              onChange={(e) => setCapitalAmount(e.target.value)}
+              required
+            />
+            <button type="submit" className="primaryButton" disabled={controlling}>
+              {controlling ? "처리 중..." : "적용"}
+            </button>
+          </form>
+        )}
+      </div>
+
+      {/* Current indicators */}
+      <Divider label="현재 시장 지표" />
+      <div className="summaryGrid">
+        <SummaryCard
+          label="현재 BTC 가격"
+          value={krw(String(Math.round(status.current_price)))}
+          info={
+            <div>
+              <p>Upbit 실시간 ticker에서 가져온 KRW-BTC <strong>최근 체결가</strong>입니다.</p>
+              <p>매 30분마다 갱신됩니다. 트레일 스톱/매수 결정은 4시간봉 종가 기준이지만, 실시간 모니터링용으로 ticker 가격을 함께 표시합니다.</p>
+              <p>큰 가격 변동이 있을 때 봇이 다음 tick에서 어떻게 반응할지 예측하는 데 참고하세요.</p>
+            </div>
+          }
+        />
+        <SummaryCard
+          label="RSI (14)"
+          value={status.current_rsi ? status.current_rsi.toFixed(1) : "-"}
+          sub={`EMA(5): ${(status.current_ema5 / 1e6).toFixed(1)}M · EMA(34): ${(status.current_ema20 / 1e6).toFixed(1)}M`}
+          info={
+            <div>
+              <p>RSI(14) = 14봉(4시간 × 14 = 56시간) 동안의 상대강도지수.</p>
+              <p>0~100 범위, Wilder smoothing 방식.</p>
+              <ul>
+                <li><strong>&lt; 25</strong>: 극도의 과매도. 거래량 폭증 동반 시 <em>Entry A (공황 매수)</em> 발동.</li>
+                <li><strong>30~50</strong>: 추세 내 눌림목 구간. EMA 정배열 + RSI 반등 + 양봉이면 <em>Entry B</em>.</li>
+                <li><strong>50선 돌파</strong>: 모멘텀 회복. EMA 정배열이면 <em>Entry C</em>.</li>
+                <li><strong>&gt; 80 + 음봉</strong>: 과열 후 꺾임. <em>RSI Top 매도</em> 발동.</li>
+              </ul>
+              <p>EMA(5)/EMA(34)는 단기/중기 추세선. EMA(5) &gt; EMA(34)면 정배열(추세 상승).</p>
+            </div>
+          }
+        />
+        <SummaryCard
+          label="거래량 비율"
+          value={status.vol_ratio ? `${status.vol_ratio.toFixed(2)}×` : "-"}
+          sub="현재 봉 거래량 / 20봉 평균"
+          info={
+            <div>
+              <p>현재 4시간봉의 거래량을 직전 20봉 평균(SMA20)과 비교한 배수입니다.</p>
+              <ul>
+                <li><strong>≥ 2.5×</strong>: 비정상적 거래량 폭증. RSI &lt; 25와 함께 충족 시 <em>공황 매수(Entry A)</em>의 핵심 트리거.</li>
+                <li><strong>1.0~1.5×</strong>: 평소 수준.</li>
+                <li><strong>&lt; 0.5×</strong>: 거래 한산. 신호 신뢰도 낮음.</li>
+              </ul>
+              <p>큰 가격 변동이 있어도 거래량이 작으면 페이크 무브일 가능성이 높아 봇이 매수를 보류합니다.</p>
+            </div>
+          }
+        />
+        <SummaryCard
+          label="마지막 신호"
+          value={status.last_signal || "-"}
+          sub={status.last_checked || ""}
+          info={
+            <div>
+              <p>직전 tick에서 봇이 평가한 결과입니다. 가능한 값:</p>
+              <ul>
+                <li><code>no signal</code>: 매수 조건 없음 + 보유 안 함</li>
+                <li><code>holding — pnl +X%</code>: 보유 중, 트레일 스톱 감시</li>
+                <li><code>cooldown (n/1 bars)</code>: 직전 청산 직후, 재진입 대기</li>
+                <li><code>waiting for next candle</code>: 같은 4시간봉 재평가는 스킵</li>
+                <li><code>bought: ...</code>, <code>sold: ...</code>: 방금 주문 발생</li>
+              </ul>
+              <p>sub-text는 마지막 tick 시각(KST). 30분 이상 갱신이 없으면 봇이 죽었거나 네트워크 문제일 수 있습니다.</p>
+            </div>
+          }
+        />
       </div>
 
       {/* Open position */}
@@ -865,19 +1030,84 @@ function TradingPanel() {
         <>
           <Divider label="현재 포지션" />
           <div className="summaryGrid">
-            <SummaryCard label="진입가" value={krw(String(Math.round(pos.entry_price)))} sub={pos.entry_date} />
-            <SummaryCard label="수량" value={`${pos.btc_qty.toFixed(8)} BTC`} />
-            <SummaryCard label="Trail High" value={krw(String(Math.round(pos.trail_high)))} sub={`스톱: ${krw(String(Math.round(pos.trail_stop)))}`} />
-            <SummaryCard label="미실현 손익" value={unrealizedKrw !== null ? signedKRW(String(Math.round(unrealizedKrw))) : "-"} tone={unrealizedPct !== null ? (unrealizedPct >= 0 ? "pos" : "neg") : ""} sub={unrealizedPct !== null ? `${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(2)}%` : ""} />
+            <SummaryCard
+              label="진입가"
+              value={krw(String(Math.round(pos.entry_price)))}
+              sub={pos.entry_date}
+              info={
+                <div>
+                  <p>현재 보유 중인 BTC를 매수했을 때의 <strong>체결 가격</strong>입니다 (Upbit 시장가 매수 + 슬리피지 0.05% 반영).</p>
+                  <p>sub-text는 진입 시각(KST). 미실현 손익의 기준점이 되는 가격입니다.</p>
+                </div>
+              }
+            />
+            <SummaryCard
+              label="수량"
+              value={`${pos.btc_qty.toFixed(8)} BTC`}
+              info={
+                <div>
+                  <p>현재 보유 중인 <strong>BTC 수량</strong>(소수점 8자리, satoshi 단위).</p>
+                  <p>주문 직후 잠시 대기하면서 Upbit 잔고 API로 실제 체결 수량을 가져와 기록합니다.</p>
+                  <p>주문 수수료 0.05%가 차감된 순수 수령 수량입니다.</p>
+                </div>
+              }
+            />
+            <SummaryCard
+              label="Trail High"
+              value={krw(String(Math.round(pos.trail_high)))}
+              sub={`스톱: ${krw(String(Math.round(pos.trail_stop)))}`}
+              info={
+                <div>
+                  <p><strong>Trail High</strong>: 진입 이후 도달한 <strong>최고 종가</strong>입니다. 가격이 새 고점을 찍을 때마다 갱신됩니다.</p>
+                  <p><strong>스톱 (sub-text)</strong>: ATR(14) 기반 동적 트레일 스톱.</p>
+                  <p style={{ fontFamily: "monospace", fontSize: 12 }}>스톱 = Trail High − ATR(14) × 2.5</p>
+                  <p>현재 가격이 스톱 이하로 내려오면 즉시 매도(시장가). ATR이 변동성에 적응하므로 변동성 큰 시기엔 스톱이 멀어지고(휩쏘 방지), 잔잔한 시기엔 가까워집니다.</p>
+                </div>
+              }
+            />
+            <SummaryCard
+              label="미실현 손익"
+              value={unrealizedKrw !== null ? signedKRW(String(Math.round(unrealizedKrw))) : "-"}
+              tone={unrealizedPct !== null ? (unrealizedPct >= 0 ? "pos" : "neg") : ""}
+              sub={unrealizedPct !== null ? `${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(2)}%` : ""}
+              info={
+                <div>
+                  <p>지금 매도하면 받을 손익(수수료 미차감 추정).</p>
+                  <p style={{ fontFamily: "monospace", fontSize: 12 }}>= (현재가 − 진입가) × 수량</p>
+                  <p>실제 청산 시에는 슬리피지 0.05% + 수수료 0.05%가 차감되므로 표시값보다 0.1%가량 낮을 수 있습니다.</p>
+                  <p>이 값이 음수더라도 트레일 스톱이 발동하지 않은 한 봇은 보유를 유지합니다.</p>
+                </div>
+              }
+            />
           </div>
         </>
       )}
 
       {/* Closed trades summary */}
-      <Divider label="누적 손익 (청산 거래)" />
+      <Divider label="누적 손익 (청산 거래만)" />
       <div className="summaryGrid">
-        <SummaryCard label="청산 횟수" value={`${closedTrades.length}회`} />
-        <SummaryCard label="누적 실현 손익" value={signedKRW(String(Math.round(totalPnlKrw)))} tone={totalPnlKrw >= 0 ? "pos" : "neg"} />
+        <SummaryCard
+          label="청산 횟수"
+          value={`${closedTrades.length}회`}
+          info={
+            <div>
+              <p>봇이 매도(청산)를 실행한 총 횟수 = 완료된 매수→매도 사이클 수.</p>
+              <p>현재 보유 중인 미실현 포지션은 포함되지 않습니다. (백테스트 기준 평균 5.1일에 한 번 청산)</p>
+            </div>
+          }
+        />
+        <SummaryCard
+          label="누적 실현 손익"
+          value={signedKRW(String(Math.round(totalPnlKrw)))}
+          tone={totalPnlKrw >= 0 ? "pos" : "neg"}
+          info={
+            <div>
+              <p><strong>청산이 끝난 거래</strong>들의 매도금액 − 매수금액 합계.</p>
+              <p>현재 미실현 포지션은 빠져있어 위쪽 <em>자산 변화율</em>과 다를 수 있습니다.</p>
+              <p>참고: 위 자산 변화율 = 실현손익 + 미실현손익(현재 포지션) 모두 반영.</p>
+            </div>
+          }
+        />
       </div>
 
       {/* Trade history */}
@@ -1032,12 +1262,26 @@ function HealthPanel() {
   );
 }
 
-function SummaryCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+function SummaryCard({ label, value, sub, tone, info }: { label: string; value: string; sub?: string; tone?: string; info?: React.ReactNode }) {
+  const [showInfo, setShowInfo] = useState(false);
   return (
-    <div className="summaryCard">
-      <div className="cardLabel">{label}</div>
+    <div className={`summaryCard ${showInfo ? "infoOpen" : ""}`}>
+      <div className="cardLabel">
+        <span>{label}</span>
+        {info && (
+          <button
+            type="button"
+            className="cardInfoBtn"
+            aria-label={`${label} 설명`}
+            onClick={() => setShowInfo((v) => !v)}
+          >
+            i
+          </button>
+        )}
+      </div>
       <div className={`cardValue ${tone || ""}`}>{value}</div>
       {sub && <div className="cardSub">{sub}</div>}
+      {info && showInfo && <div className="cardInfoBody">{info}</div>}
     </div>
   );
 }
