@@ -2,6 +2,7 @@ import React, { FormEvent, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
+  BotMessageSquare,
   ChartNoAxesCombined,
   Coins,
   Globe,
@@ -12,6 +13,7 @@ import {
   RefreshCw,
   Send,
   Sun,
+  TrendingUp,
   UserCircle
 } from "lucide-react";
 import "./styles.css";
@@ -649,7 +651,26 @@ function CommandPanel({ tab }: { tab: TabID }) {
   );
 }
 
+type AssetSubTab = "portfolio" | "trading";
+
 function AssetManager() {
+  const [sub, setSub] = useState<AssetSubTab>("portfolio");
+  return (
+    <div className="workspace">
+      <div className="subTabBar">
+        <button type="button" className={`subTabBtn ${sub === "portfolio" ? "active" : ""}`} onClick={() => setSub("portfolio")}>
+          <Coins size={15} /> 포트폴리오
+        </button>
+        <button type="button" className={`subTabBtn ${sub === "trading" ? "active" : ""}`} onClick={() => setSub("trading")}>
+          <BotMessageSquare size={15} /> 퀀트봇
+        </button>
+      </div>
+      {sub === "portfolio" ? <PortfolioPanel /> : <TradingPanel />}
+    </div>
+  );
+}
+
+function PortfolioPanel() {
   const [stock, setStock] = useState<AssetResult | null>(null);
   const [crypto, setCrypto] = useState<CryptoResult | null>(null);
   const [stockTs, setStockTs] = useState("");
@@ -688,7 +709,7 @@ function AssetManager() {
   ];
 
   return (
-    <div className="workspace">
+    <>
       <PortfolioOverview slices={overviewSlices} />
       {stock?.error && <div className="errorBox">{stock.error}</div>}
       {kisWarnings.length > 0 && (
@@ -708,7 +729,6 @@ function AssetManager() {
       <DataCard title="보유종목" timestamp={stockTs} onRefresh={loadStocks}>
         <HoldingsTable holdings={holdings} />
       </DataCard>
-
       <Divider label="업비트 코인" />
       {crypto?.error && <div className="errorBox">{crypto.error}</div>}
       <div className="summaryGrid">
@@ -719,7 +739,184 @@ function AssetManager() {
       <DataCard title="보유 코인" timestamp={cryptoTs} onRefresh={loadCrypto}>
         <CryptoTable assets={cryptoAssets} />
       </DataCard>
-    </div>
+    </>
+  );
+}
+
+// ── Trading types ─────────────────────────────────────────────────────────────
+
+type TradeRecord = {
+  id: string;
+  action: "BUY" | "SELL";
+  price: number;
+  btc_qty: number;
+  krw_amt: number;
+  reason: string;
+  timestamp: string;
+};
+
+type TradingPosition = {
+  entry_price: number;
+  entry_date: string;
+  btc_qty: number;
+  trail_high: number;
+  trail_stop: number;
+};
+
+type TradingStatus = {
+  error?: string;
+  in_position: boolean;
+  position?: TradingPosition;
+  last_exit_date: string;
+  history: TradeRecord[];
+  paused: boolean;
+  last_checked: string;
+  last_signal: string;
+  current_price: number;
+  current_rsi: number;
+  current_ema5: number;
+  current_ema20: number;
+  vol_ratio: number;
+  dry_run: boolean;
+};
+
+// ── TradingPanel ──────────────────────────────────────────────────────────────
+
+function TradingPanel() {
+  const [status, setStatus] = useState<TradingStatus | null>(null);
+  const [ts, setTs] = useState("");
+  const [controlling, setControlling] = useState(false);
+
+  const load = async () => {
+    try {
+      const data = await fetchJSON<TradingStatus>("/api/trading/status");
+      setStatus(data);
+      setTs(new Date().toLocaleTimeString("ko-KR"));
+    } catch (error) {
+      setStatus({ error: error instanceof Error ? error.message : "퀀트봇 상태를 불러오지 못했습니다.", in_position: false, history: [], paused: false, last_checked: "", last_signal: "", current_price: 0, current_rsi: 0, current_ema5: 0, current_ema20: 0, vol_ratio: 0, dry_run: false, last_exit_date: "" });
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const t = window.setInterval(load, 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const togglePause = async () => {
+    if (!status) return;
+    setControlling(true);
+    try {
+      await fetchJSON("/api/trading/control", {
+        method: "POST",
+        body: JSON.stringify({ action: status.paused ? "resume" : "pause" })
+      });
+      await load();
+    } finally {
+      setControlling(false);
+    }
+  };
+
+  if (!status) return <div className="empty">불러오는 중...</div>;
+
+  const pos = status.position;
+  const unrealizedPct = pos ? (status.current_price - pos.entry_price) / pos.entry_price * 100 : null;
+  const unrealizedKrw = pos ? (status.current_price - pos.entry_price) * pos.btc_qty : null;
+
+  const history = [...(status.history ?? [])].reverse();
+  const closedTrades = history.filter(t => t.action === "SELL");
+  const totalPnlKrw = (() => {
+    let equity = 0;
+    let inPos = false;
+    let buyKrw = 0;
+    for (const t of [...(status.history ?? [])]) {
+      if (t.action === "BUY") { inPos = true; buyKrw = t.krw_amt; }
+      else if (t.action === "SELL" && inPos) { equity += t.krw_amt - buyKrw; inPos = false; }
+    }
+    return equity;
+  })();
+
+  return (
+    <>
+      {status.error && <div className="errorBox">{status.error}</div>}
+
+      {/* Status banner */}
+      <div className={`tradingBanner ${status.paused ? "paused" : status.in_position ? "active" : "idle"}`}>
+        <div className="tradingBannerLeft">
+          <span className="tradingBannerDot" />
+          <strong>{status.paused ? "일시 정지" : status.in_position ? "포지션 보유 중" : "대기 중"}</strong>
+          {status.dry_run && <span className="tradingDryRun">DRY-RUN</span>}
+        </div>
+        <button type="button" className={`tradingControlBtn ${status.paused ? "" : "danger"}`} onClick={togglePause} disabled={controlling || !!status.error}>
+          {controlling ? "처리 중..." : status.paused ? "재개" : "일시 정지"}
+        </button>
+      </div>
+
+      {/* Current indicators */}
+      <div className="summaryGrid">
+        <SummaryCard label="현재 BTC 가격" value={krw(String(Math.round(status.current_price)))} />
+        <SummaryCard label="RSI (14)" value={status.current_rsi ? status.current_rsi.toFixed(1) : "-"} sub={`EMA5: ${Math.round(status.current_ema5 / 1e6)}M  EMA20: ${Math.round(status.current_ema20 / 1e6)}M`} />
+        <SummaryCard label="거래량 비율" value={status.vol_ratio ? `${status.vol_ratio.toFixed(2)}×` : "-"} sub="vol / 20일 평균" />
+        <SummaryCard label="마지막 신호" value={status.last_signal || "-"} sub={status.last_checked || ""} />
+      </div>
+
+      {/* Open position */}
+      {status.in_position && pos && (
+        <>
+          <Divider label="현재 포지션" />
+          <div className="summaryGrid">
+            <SummaryCard label="진입가" value={krw(String(Math.round(pos.entry_price)))} sub={pos.entry_date} />
+            <SummaryCard label="수량" value={`${pos.btc_qty.toFixed(8)} BTC`} />
+            <SummaryCard label="Trail High" value={krw(String(Math.round(pos.trail_high)))} sub={`스톱: ${krw(String(Math.round(pos.trail_stop)))}`} />
+            <SummaryCard label="미실현 손익" value={unrealizedKrw !== null ? signedKRW(String(Math.round(unrealizedKrw))) : "-"} tone={unrealizedPct !== null ? (unrealizedPct >= 0 ? "pos" : "neg") : ""} sub={unrealizedPct !== null ? `${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(2)}%` : ""} />
+          </div>
+        </>
+      )}
+
+      {/* Closed trades summary */}
+      <Divider label="누적 손익 (청산 거래)" />
+      <div className="summaryGrid">
+        <SummaryCard label="청산 횟수" value={`${closedTrades.length}회`} />
+        <SummaryCard label="누적 실현 손익" value={signedKRW(String(Math.round(totalPnlKrw)))} tone={totalPnlKrw >= 0 ? "pos" : "neg"} />
+      </div>
+
+      {/* Trade history */}
+      <DataCard title="거래 내역" timestamp={ts} onRefresh={load}>
+        <TradeHistoryTable trades={history} />
+      </DataCard>
+    </>
+  );
+}
+
+function TradeHistoryTable({ trades }: { trades: TradeRecord[] }) {
+  if (trades.length === 0) return <div className="empty">거래 내역이 없습니다.</div>;
+  return (
+    <table className="dataTable">
+      <thead>
+        <tr>
+          <th>일시</th>
+          <th>구분</th>
+          <th>가격</th>
+          <th>수량 (BTC)</th>
+          <th>금액 (KRW)</th>
+          <th>사유</th>
+        </tr>
+      </thead>
+      <tbody>
+        {trades.map((t) => (
+          <tr key={t.id}>
+            <td data-label="일시">{new Date(t.timestamp).toLocaleString("ko-KR")}</td>
+            <td data-label="구분">
+              <span className={`tradeBadge ${t.action === "BUY" ? "buy" : "sell"}`}>{t.action === "BUY" ? "매수" : "매도"}</span>
+            </td>
+            <td data-label="가격">{krw(String(Math.round(t.price)))}</td>
+            <td data-label="수량">{t.btc_qty.toFixed(8)}</td>
+            <td data-label="금액">{krw(String(Math.round(t.krw_amt)))}</td>
+            <td data-label="사유" className="tradeReason">{t.reason}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
