@@ -64,7 +64,6 @@ type AssetResult = {
     foreign_output1_rows?: number;
     foreign_output2_rows: number;
     foreign_output3_rows: number;
-    foreign_output1_sample?: string;
     foreign_error?: string;
   };
   summary?: {
@@ -208,9 +207,6 @@ function kisDiagnosticMessages(diagnostics?: AssetResult["diagnostics"], holding
     messages.push(diagnostics.foreign_error);
   } else if ((diagnostics.foreign_output2_rows || 0) + (diagnostics.foreign_output3_rows || 0) === 0) {
     messages.push(`외화 잔고조회(${diagnostics.foreign_tr_id || "TR"}) 응답에 외화 예수금 행이 없습니다.`);
-  }
-  if (diagnostics.foreign_output1_sample) {
-    messages.push(`해외 잔고 output1 샘플: ${diagnostics.foreign_output1_sample}`);
   }
   return messages;
 }
