@@ -39,6 +39,7 @@ type Session = {
 type Holding = {
   code: string;
   name: string;
+  market?: string;
   qty: string;
   avg_price: string;
   cur_price: string;
@@ -1331,10 +1332,13 @@ function HoldingsTable({ holdings }: { holdings: Holding[] }) {
       </thead>
       <tbody>
         {holdings.map((item) => (
-          <tr key={item.code}>
+          <tr key={`${item.market || ""}-${item.code}`}>
             <td data-label="종목">
               <strong>{item.name}</strong>
-              <span>{item.code}</span>
+              <span>
+                {item.market && item.market !== "KR" ? `${item.market} · ` : ""}
+                {item.code}
+              </span>
             </td>
             <td data-label="수량">{num(item.qty)}</td>
             <td data-label="평균단가">{num(item.avg_price)}</td>
