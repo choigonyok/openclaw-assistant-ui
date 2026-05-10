@@ -770,6 +770,7 @@ type TradingStatus = {
   in_position: boolean;
   position?: TradingPosition;
   last_exit_date: string;
+  last_exit_reason?: string;
   history: TradeRecord[];
   paused: boolean;
   last_checked: string;
@@ -779,6 +780,7 @@ type TradingStatus = {
   current_ema5: number;
   current_ema20: number;
   current_atr?: number;
+  current_donchian_high?: number;
   vol_ratio: number;
   dry_run: boolean;
   total_capital_in?: number;
@@ -983,11 +985,12 @@ function TradingPanel() {
               <p>0~100 범위, Wilder smoothing 방식.</p>
               <ul>
                 <li><strong>&lt; 25</strong>: 극도의 과매도. 거래량 폭증 동반 시 <em>Entry A (공황 매수)</em> 발동.</li>
-                <li><strong>30~50</strong>: 추세 내 눌림목 구간. EMA 정배열 + RSI 반등 + 양봉이면 <em>Entry B</em>.</li>
-                <li><strong>50선 돌파</strong>: 모멘텀 회복. EMA 정배열이면 <em>Entry C</em>.</li>
-                <li><strong>&gt; 80 + 음봉</strong>: 과열 후 꺾임. <em>RSI Top 매도</em> 발동.</li>
+                <li><strong>30~50</strong>: 추세 내 눌림목 구간. EMA 정배열 + RSI 반등 + 양봉이면 <em>Entry B (반등)</em>.</li>
+                <li><strong>50선 돌파</strong>: 모멘텀 회복. EMA 정배열이면 <em>Entry C (모멘텀)</em>.</li>
+                <li><strong>&gt; 80 + 음봉</strong>: 과열 후 꺾임. <em>RSI Top 매도</em> 발동 (TP/SL/트레일이 먼저 발동되지 않은 경우).</li>
               </ul>
               <p>EMA(5)/EMA(34)는 단기/중기 추세선. EMA(5) &gt; EMA(34)면 정배열(추세 상승).</p>
+              <p>RSI 외에 <em>Entry D (Donchian-20 돌파)</em>도 있어 RSI와 무관하게 직전 20봉 신고가 돌파 시 매수합니다 — 강한 추세 초기 진입용.</p>
             </div>
           }
         />
@@ -1008,6 +1011,22 @@ function TradingPanel() {
           }
         />
         <SummaryCard
+          label="Donchian-20 High"
+          value={status.current_donchian_high ? krw(String(Math.round(status.current_donchian_high))) : "-"}
+          sub={
+            status.current_donchian_high && status.current_price
+              ? `현재가와 ${(((status.current_price - status.current_donchian_high) / status.current_donchian_high) * 100).toFixed(2)}%`
+              : ""
+          }
+          info={
+            <div>
+              <p>직전 20개 4시간봉(=80시간 ≈ 3.3일)의 <strong>최고가</strong>입니다.</p>
+              <p>현재 종가가 이 값을 돌파하면 <em>Entry D (Donchian 돌파)</em> 시그널 발동 — Turtle Trading 스타일의 추세 추종 진입.</p>
+              <p>EMA/RSI 기반 Entry A/B/C가 평균회귀/되돌림 매수라면, Entry D는 <strong>강한 추세의 초기 진입</strong>을 담당합니다.</p>
+            </div>
+          }
+        />
+        <SummaryCard
           label="마지막 신호"
           value={status.last_signal || "-"}
           sub={status.last_checked || ""}
@@ -1016,11 +1035,18 @@ function TradingPanel() {
               <p>직전 tick에서 봇이 평가한 결과입니다. 가능한 값:</p>
               <ul>
                 <li><code>no signal</code>: 매수 조건 없음 + 보유 안 함</li>
-                <li><code>holding — pnl +X%</code>: 보유 중, 트레일 스톱 감시</li>
-                <li><code>cooldown (n/1 bars)</code>: 직전 청산 직후, 재진입 대기</li>
+                <li><code>holding — pnl +X%</code>: 보유 중, TP/SL/트레일 감시</li>
+                <li><code>cooldown (n/N bars)</code>: 직전 청산 직후, 재진입 대기. 일반 청산 후엔 N=1봉, <strong>SL 청산 후엔 N=6봉</strong> (V3.1: SL→SL 연쇄 차단)</li>
                 <li><code>waiting for next candle</code>: 같은 4시간봉 재평가는 스킵</li>
-                <li><code>bought: ...</code>, <code>sold: ...</code>: 방금 주문 발생</li>
+                <li><code>bought: capitulation/bounce/momentum/donchian20(...)</code>: 매수 발생 (Entry A/B/C/D 라벨)</li>
+                <li><code>sold: take_profit/stop_loss/atr_trail/rsi_top(...)</code>: 매도 발생 (사유 라벨)</li>
               </ul>
+              {status.last_exit_reason && (
+                <p style={{ marginTop: 8 }}>
+                  <strong>마지막 청산 사유</strong>: <code>{status.last_exit_reason}</code>
+                  {status.last_exit_reason.startsWith("stop_loss") && " — 6봉(24h) 쿨다운 적용 중"}
+                </p>
+              )}
               <p>sub-text는 마지막 tick 시각(KST). 30분 이상 갱신이 없으면 봇이 죽었거나 네트워크 문제일 수 있습니다.</p>
             </div>
           }
@@ -1062,8 +1088,9 @@ function TradingPanel() {
                 <div>
                   <p><strong>Trail High</strong>: 진입 이후 도달한 <strong>최고 종가</strong>입니다. 가격이 새 고점을 찍을 때마다 갱신됩니다.</p>
                   <p><strong>스톱 (sub-text)</strong>: ATR(14) 기반 동적 트레일 스톱.</p>
-                  <p style={{ fontFamily: "monospace", fontSize: 12 }}>스톱 = Trail High − ATR(14) × 2.5</p>
+                  <p style={{ fontFamily: "monospace", fontSize: 12 }}>스톱 = Trail High − ATR(14) × 4.0</p>
                   <p>현재 가격이 스톱 이하로 내려오면 즉시 매도(시장가). ATR이 변동성에 적응하므로 변동성 큰 시기엔 스톱이 멀어지고(휩쏘 방지), 잔잔한 시기엔 가까워집니다.</p>
+                  <p style={{ marginTop: 8 }}>※ V3 전략에서는 <strong>TP +10% / SL -2%</strong>가 트레일보다 먼저 평가됩니다. 즉 진입가 대비 +10% 도달 시 일괄 익절, -2% 도달 시 즉시 손절. 트레일 스톱은 그 사이 구간(중간 후행 청산)을 담당합니다.</p>
                 </div>
               }
             />
@@ -1077,7 +1104,31 @@ function TradingPanel() {
                   <p>지금 매도하면 받을 손익(수수료 미차감 추정).</p>
                   <p style={{ fontFamily: "monospace", fontSize: 12 }}>= (현재가 − 진입가) × 수량</p>
                   <p>실제 청산 시에는 슬리피지 0.05% + 수수료 0.05%가 차감되므로 표시값보다 0.1%가량 낮을 수 있습니다.</p>
-                  <p>이 값이 음수더라도 트레일 스톱이 발동하지 않은 한 봇은 보유를 유지합니다.</p>
+                  <p>이 값이 음수더라도 TP/SL/트레일 스톱이 발동하지 않은 한 봇은 보유를 유지합니다.</p>
+                </div>
+              }
+            />
+            <SummaryCard
+              label="익절가 (TP +10%)"
+              value={krw(String(Math.round(pos.entry_price * 1.10)))}
+              sub={`현재가 대비 ${(((pos.entry_price * 1.10 - status.current_price) / status.current_price) * 100).toFixed(2)}%`}
+              info={
+                <div>
+                  <p>현재가가 진입가 대비 <strong>+10%</strong>에 도달하면 즉시 일괄 매도(시장가).</p>
+                  <p style={{ fontFamily: "monospace", fontSize: 12 }}>TP = 진입가 × 1.10</p>
+                  <p>큰 추세 끝에서 트레일이 5~10% 반락 후 청산되는 패턴을 방지하기 위해 +10% 시점에 익절을 lock-in 합니다.</p>
+                </div>
+              }
+            />
+            <SummaryCard
+              label="손절가 (SL -2%)"
+              value={krw(String(Math.round(pos.entry_price * 0.98)))}
+              sub={`현재가 대비 ${(((pos.entry_price * 0.98 - status.current_price) / status.current_price) * 100).toFixed(2)}%`}
+              info={
+                <div>
+                  <p>현재가가 진입가 대비 <strong>-2%</strong> 이하로 떨어지면 즉시 시장가 매도.</p>
+                  <p style={{ fontFamily: "monospace", fontSize: 12 }}>SL = 진입가 × 0.98</p>
+                  <p>잘못된 진입의 손실을 작게 컷하는 역할. 평균 손실폭을 약 -2.5% → -1.8% 수준으로 압축합니다.</p>
                 </div>
               }
             />
@@ -1094,7 +1145,7 @@ function TradingPanel() {
           info={
             <div>
               <p>봇이 매도(청산)를 실행한 총 횟수 = 완료된 매수→매도 사이클 수.</p>
-              <p>현재 보유 중인 미실현 포지션은 포함되지 않습니다. (백테스트 기준 평균 5.1일에 한 번 청산)</p>
+              <p>현재 보유 중인 미실현 포지션은 포함되지 않습니다. (V3.1 백테스트 기준 평균 7.4일에 한 번 청산)</p>
             </div>
           }
         />
