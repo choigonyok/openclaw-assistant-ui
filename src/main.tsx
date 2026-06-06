@@ -48,8 +48,15 @@ type Holding = {
   pnl_rate: string;
 };
 
+type ManualAsset = {
+  id: string;
+  label: string;
+  value_krw: string;
+};
+
 type AssetResult = {
   error?: string;
+  manual_assets?: ManualAsset[];
   diagnostics?: {
     domestic_tr_id?: string;
     domestic_output1_rows: number;
@@ -120,6 +127,7 @@ type OverviewSlice = {
 };
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const manualAssetColors = ["#e11d48", "#0f766e", "#64748b", "#9333ea"];
 
 const tabs: Record<TabID, { title: string; sub: string; icon: React.ComponentType<{ size?: number }> }> = {
   trader: { title: "Trader", sub: "Trader workspace", icon: ChartNoAxesCombined },
@@ -697,17 +705,28 @@ function PortfolioPanel() {
 
   const summary = stock?.summary;
   const holdings = stock?.holdings || [];
+  const manualAssets = stock?.manual_assets || [];
   const cryptoAssets = crypto?.assets || [];
   const kisWarnings = kisDiagnosticMessages(stock?.diagnostics, holdings.length);
   const krwCash = Math.max(0, parseAmount(summary?.cash_krw || summary?.cash_amt) || 0) + Math.max(0, parseAmount(crypto?.krw_balance) || 0);
   const stockAccountTotal = Math.max(0, parseAmount(summary?.total_amt) || 0) + Math.max(0, parseAmount(summary?.cash_usd_krw) || 0);
   const cryptoTotal = Math.max(0, parseAmount(crypto?.total_eval) || 0);
   const cryptoOnly = Math.max(0, cryptoTotal - (parseAmount(crypto?.krw_balance) || 0));
+  const manualSlices: OverviewSlice[] = manualAssets.map((asset, index) => {
+    const value = Math.max(0, parseAmount(asset.value_krw) || 0);
+    return {
+      label: asset.label,
+      value,
+      display: krw(asset.value_krw),
+      color: manualAssetColors[index % manualAssetColors.length]
+    };
+  });
   const overviewSlices: OverviewSlice[] = [
     { label: "코인", value: cryptoOnly, display: krw(String(cryptoOnly)), color: "#00b894" },
     { label: "달러", value: Math.max(0, parseAmount(summary?.cash_usd_krw) || 0), display: krw(summary?.cash_usd_krw), color: "#7c3aed" },
     { label: "원화", value: krwCash, display: krw(String(krwCash)), color: "#f59f00" },
-    { label: "주식", value: Math.max(0, parseAmount(summary?.stock_amt) || 0), display: krw(summary?.stock_amt), color: "#3182f6" }
+    { label: "주식", value: Math.max(0, parseAmount(summary?.stock_amt) || 0), display: krw(summary?.stock_amt), color: "#3182f6" },
+    ...manualSlices
   ];
 
   return (
@@ -741,6 +760,16 @@ function PortfolioPanel() {
       <DataCard title="보유 코인" timestamp={cryptoTs} onRefresh={loadCrypto}>
         <CryptoTable assets={cryptoAssets} />
       </DataCard>
+      {manualAssets.length > 0 && (
+        <>
+          <Divider label="기본 자산" />
+          <div className="summaryGrid">
+            {manualAssets.map((asset) => (
+              <SummaryCard key={asset.id} label={asset.label} value={krw(asset.value_krw)} sub="기본 포함" />
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
 }
